@@ -1,0 +1,36 @@
+# Security backlog
+
+Follow-ups found while hardening repository analysis. Not yet scheduled.
+
+## Secret redaction (`redaction/SecretRedactor`)
+
+High-confidence patterns (private keys, AWS key IDs, GitHub tokens, Google API
+keys, connection-string passwords) already apply to every file. The key-name
+rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
+
+1. **Dockerfile `ENV` / `ARG` lines.** `ENV DB_PASSWORD=hunter2` and
+   `ENV DB_PASSWORD hunter2` (space-separated form) are not redacted. Add a
+   Dockerfile-specific rule for `ENV`/`ARG` with sensitive key names.
+2. **XML elements.** `<password>…</password>`, `<secret>`, `<token>`,
+   `<apiKey>` and similar (e.g. Maven `settings.xml`, Spring XML config) are not
+   redacted. Add an element-name rule for `.xml` files; keep it linear (no
+   nested-element regex) and leave `${…}` placeholders alone.
+3. **`.toml`, `.ini`, `.conf` files.** Extend the configuration-file rule to these
+   formats (`key = "value"`, `key=value`, `[section]` headers), with tests for
+   each.
+4. **`package.json` dependency versions.** Keys inside `dependencies`,
+   `devDependencies`, `peerDependencies` and `optionalDependencies` are package
+   names, not secrets; `"jsonwebtoken": "^9.0.0"` currently has its version
+   redacted because the key contains "token". Exempt these sections before any
+   npm dependency parsing is added.
+
+## GitHub access
+
+5. **Shared server token on the connection path.** Connection-based analysis
+   (`repositoryConnectionId`) still calls GitHub with the server-wide
+   `GITHUB_TOKEN`, so access is limited only by DevBuddy's ownership checks,
+   not by the user's own GitHub permissions. Resolve this when GitHub
+   connections are implemented: use the user's own token
+   (`github_connections.token_reference`, stored outside the database) for
+   every call on that path, and never fall back to the server token for
+   private repositories.
