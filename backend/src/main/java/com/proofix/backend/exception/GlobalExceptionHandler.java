@@ -41,6 +41,16 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    @ExceptionHandler(RepositoryAccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleRepositoryAccessDenied(
+            RepositoryAccessDeniedException exception) {
+
+        Map<String, String> response = new HashMap<>();
+        response.put("error", exception.getMessage());
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(
             ResourceNotFoundException exception) {

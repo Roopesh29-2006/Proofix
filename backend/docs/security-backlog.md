@@ -34,3 +34,8 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
    (`github_connections.token_reference`, stored outside the database) for
    every call on that path, and never fall back to the server token for
    private repositories.
+6. **Private-repository existence oracle.** One-off URL analysis returns 403
+   for a private repository that the server token can see, but 404 for a
+   repository that does not exist, so a caller can probe which private
+   repositories exist. Handle later, e.g. return the same response for both
+   cases or stop using the server token on the one-off path.

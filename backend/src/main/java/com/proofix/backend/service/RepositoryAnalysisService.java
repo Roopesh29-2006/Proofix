@@ -3,6 +3,7 @@ package com.proofix.backend.service;
 import java.util.List;
 
 import com.proofix.backend.exception.GitHubApiException;
+import com.proofix.backend.exception.RepositoryAccessDeniedException;
 import com.proofix.backend.github.GitHubUrlParser;
 import com.proofix.backend.github.GitHubUrlParser.RepositoryCoordinates;
 import com.proofix.backend.github.RepositoryFileClassifier;
@@ -18,6 +19,9 @@ import tools.jackson.databind.JsonNode;
 
 @Service
 public class RepositoryAnalysisService {
+
+    static final String PRIVATE_REPOSITORY_MESSAGE =
+            "Private repositories require a project repository connection.";
 
     private final GitHubUrlParser gitHubUrlParser;
     private final RepositoryMetadataService repositoryMetadataService;
@@ -38,10 +42,31 @@ public class RepositoryAnalysisService {
         this.repositoryFileReader = repositoryFileReader;
     }
 
+    /**
+     * Analyzes a repository without a visibility check. Only for the
+     * connection-based path, where ownership has already been verified.
+     */
     public AnalysisResult analyze(String repositoryUrl) {
+        return analyze(repositoryUrl, false);
+    }
+
+    /**
+     * One-off URL analysis: only public repositories are allowed. The
+     * {@code private} flag is checked from the repository metadata before
+     * the commit, tree or any file content is requested; a missing or
+     * non-boolean flag is rejected.
+     */
+    public AnalysisResult analyzePublicRepository(String repositoryUrl) {
+        return analyze(repositoryUrl, true);
+    }
+
+    private AnalysisResult analyze(String repositoryUrl, boolean publicOnly) {
         RepositoryCoordinates coordinates = gitHubUrlParser.parse(repositoryUrl);
         JsonNode metadataResponse =
                 repositoryMetadataService.getRepositoryMetadata(coordinates);
+        if (publicOnly) {
+            requirePublicRepository(metadataResponse);
+        }
         RepositoryMetadata metadata = extractMetadata(metadataResponse);
         JsonNode commitResponse =
                 repositoryMetadataService.getRepositoryLatestCommit(
@@ -73,6 +98,31 @@ public class RepositoryAnalysisService {
                 fileReadResult.filesSkipped(),
                 tree.truncated(),
                 fileReadResult.bytesDownloaded());
+    }
+
+    /**
+     * Fails closed: the repository must report {@code "private": false}, and
+     * a {@code visibility} field, when present, must be {@code "public"}.
+     */
+    private static void requirePublicRepository(JsonNode metadata) {
+        JsonNode privateFlag = metadata == null || !metadata.isObject()
+                ? null
+                : metadata.get("private");
+        boolean isPublic = privateFlag != null
+                && privateFlag.isBoolean()
+                && !privateFlag.booleanValue();
+
+        JsonNode visibility = isPublic ? metadata.get("visibility") : null;
+        if (visibility != null && !visibility.isNull()
+                && !(visibility.isTextual()
+                        && "public".equals(visibility.asText()))) {
+            isPublic = false;
+        }
+
+        if (!isPublic) {
+            throw new RepositoryAccessDeniedException(
+                    PRIVATE_REPOSITORY_MESSAGE);
+        }
     }
 
     private static CommitMetadata extractCommitMetadata(JsonNode commit) {
