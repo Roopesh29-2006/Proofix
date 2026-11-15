@@ -15,6 +15,7 @@ import com.proofix.backend.dto.UserRegistrationRequest;
 import com.proofix.backend.dto.UserRegistrationResponse;
 import com.proofix.backend.entity.User;
 import com.proofix.backend.entity.UserCredential;
+import com.proofix.backend.exception.ConflictException;
 import com.proofix.backend.repository.UserCredentialRepository;
 import com.proofix.backend.repository.UserRepository;
 import com.proofix.backend.security.JwtService;
@@ -49,7 +50,7 @@ public class UserService {
                 .toLowerCase(Locale.ROOT);
 
         if (userRepository.existsByEmail(normalizedEmail)) {
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "An account with this email already exists");
         }
 

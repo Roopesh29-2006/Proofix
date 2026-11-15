@@ -39,3 +39,13 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
    repository that does not exist, so a caller can probe which private
    repositories exist. Handle later, e.g. return the same response for both
    cases or stop using the server token on the one-off path.
+
+## Error responses
+
+7. **400 responses echo `IllegalArgumentException` messages.**
+   `GlobalExceptionHandler` returns the exception message as the error text so
+   that our own validation messages (e.g. "Invalid GitHub repository URL")
+   reach the client. An `IllegalArgumentException` thrown by a library would
+   be echoed the same way and could expose internal details. Replace with a
+   dedicated validation exception for our own messages and a generic message
+   for everything else.

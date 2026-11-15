@@ -9,16 +9,22 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import com.proofix.backend.security.JsonSecurityErrorHandler;
 import com.proofix.backend.security.JwtAuthenticationFilter;
+
+import jakarta.servlet.DispatcherType;
 
 @Configuration
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JsonSecurityErrorHandler securityErrorHandler;
 
     public SecurityConfig(
-            JwtAuthenticationFilter jwtAuthenticationFilter) {
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            JsonSecurityErrorHandler securityErrorHandler) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.securityErrorHandler = securityErrorHandler;
     }
 
     @Bean
@@ -39,6 +45,11 @@ public class SecurityConfig {
             // Define public and protected endpoints
             .authorizeHttpRequests(auth -> auth
 
+                // Error dispatches carry the original status; without this the
+                // JWT filter (which skips error dispatches) would turn every
+                // error response into a 401.
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+
                 .requestMatchers(
                     HttpMethod.POST,
                     "/api/auth/register",
@@ -51,6 +62,12 @@ public class SecurityConfig {
                 ).permitAll()
 
                 .anyRequest().authenticated()
+            )
+
+            // JSON 401 (not authenticated) and 403 (access denied)
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(securityErrorHandler)
+                .accessDeniedHandler(securityErrorHandler)
             )
 
             // Execute JWT filter before username/password authentication
