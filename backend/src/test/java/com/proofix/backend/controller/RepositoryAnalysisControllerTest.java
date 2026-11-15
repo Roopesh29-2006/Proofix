@@ -11,6 +11,7 @@ import java.util.List;
 
 import com.proofix.backend.exception.GlobalExceptionHandler;
 import com.proofix.backend.exception.GitHubApiException;
+import com.proofix.backend.exception.RepositoryAccessDeniedException;
 import com.proofix.backend.github.RepositoryFileClassifier.FileCategory;
 import com.proofix.backend.github.RepositoryFileReader.ScannedFile;
 import com.proofix.backend.github.RepositoryTreeService.RepositoryFile;
@@ -152,6 +153,25 @@ class RepositoryAnalysisControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error",
                         is("Repository not found or inaccessible")));
+    }
+
+    @Test
+    void returnsForbiddenForPrivateRepository() throws Exception {
+        when(repositoryAnalysisOrchestrationService.analyze(
+                REPOSITORY_URL, null, USER_ID))
+                .thenThrow(new RepositoryAccessDeniedException(
+                        "Private repositories require a project repository connection."));
+
+        mockMvc.perform(post("/api/repository/analyze")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .principal(new UsernamePasswordAuthenticationToken(
+                                USER_ID.toString(), null))
+                        .content("""
+                                {"repositoryUrl":"https://github.com/acme/demo"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", is(
+                        "Private repositories require a project repository connection.")));
     }
 
     @Test

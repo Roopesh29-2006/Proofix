@@ -44,7 +44,8 @@ public class RepositoryAnalysisOrchestrationService {
 
         if (repositoryConnectionId == null) {
             return new AnalysisOutcome(
-                    repositoryAnalysisService.analyze(repositoryUrl),
+                    repositoryAnalysisService.analyzePublicRepository(
+                            repositoryUrl),
                     null);
         }
 

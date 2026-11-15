@@ -3,6 +3,8 @@ package com.proofix.backend.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -10,6 +12,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 
 import com.proofix.backend.exception.GitHubApiException;
+import com.proofix.backend.exception.RepositoryAccessDeniedException;
 import com.proofix.backend.github.GitHubUrlParser;
 import com.proofix.backend.github.GitHubUrlParser.RepositoryCoordinates;
 import com.proofix.backend.github.RepositoryFileClassifier;
@@ -272,6 +275,137 @@ class RepositoryAnalysisServiceTest {
 
         assertEquals(502, failure.getStatusCode());
         verifyNoInteractions(repositoryTreeService);
+    }
+
+    // ---------------------------------------------------------------
+    // One-off URL analysis: public repositories only
+    // ---------------------------------------------------------------
+
+    @Test
+    void publicOnlyAnalysisAllowsPublicRepository() throws Exception {
+        RepositoryTree tree = new RepositoryTree(List.of(), 0, false);
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadataWith("\"private\": false,"));
+        when(repositoryMetadataService.getRepositoryLatestCommit(
+                coordinates, "main"))
+                .thenReturn(commit());
+        when(repositoryTreeService.getRepositoryTree(coordinates, "main"))
+                .thenReturn(tree);
+        when(repositoryFileReader.readRelevantFiles(
+                coordinates, tree, "main"))
+                .thenReturn(new FileReadResult(List.of(), 0, 0));
+
+        RepositoryAnalysisService.AnalysisResult result =
+                service.analyzePublicRepository(REPOSITORY_URL);
+
+        assertEquals("demo", result.metadata().repositoryName());
+        verify(repositoryTreeService).getRepositoryTree(coordinates, "main");
+        verify(repositoryFileReader).readRelevantFiles(
+                coordinates, tree, "main");
+    }
+
+    @Test
+    void publicOnlyAnalysisRejectsPrivateRepositoryWithoutTreeOrFileCalls()
+            throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadataWith("\"private\": true,"));
+
+        RepositoryAccessDeniedException failure = assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.analyzePublicRepository(REPOSITORY_URL));
+
+        assertEquals(
+                "Private repositories require a project repository connection.",
+                failure.getMessage());
+        verify(repositoryMetadataService, never())
+                .getRepositoryLatestCommit(any(), any());
+        verifyNoInteractions(repositoryTreeService, repositoryFileReader);
+    }
+
+    @Test
+    void publicOnlyAnalysisRejectsMissingPrivateFlag() throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadata());
+
+        assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.analyzePublicRepository(REPOSITORY_URL));
+
+        verify(repositoryMetadataService, never())
+                .getRepositoryLatestCommit(any(), any());
+        verifyNoInteractions(repositoryTreeService, repositoryFileReader);
+    }
+
+    @Test
+    void publicOnlyAnalysisRejectsNonBooleanPrivateFlag() throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadataWith("\"private\": \"false\","));
+
+        assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.analyzePublicRepository(REPOSITORY_URL));
+
+        verifyNoInteractions(repositoryTreeService, repositoryFileReader);
+    }
+
+    @Test
+    void publicOnlyAnalysisRejectsNonPublicVisibilityEvenIfPrivateIsFalse()
+            throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(objectMapper.readTree("""
+                        {
+                          "name": "demo",
+                          "default_branch": "main",
+                          "private": false,
+                          "visibility": "internal"
+                        }
+                        """));
+
+        assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.analyzePublicRepository(REPOSITORY_URL));
+
+        verifyNoInteractions(repositoryTreeService, repositoryFileReader);
+    }
+
+    @Test
+    void connectionPathAnalysisDoesNotCheckPrivateFlag() throws Exception {
+        RepositoryTree tree = new RepositoryTree(List.of(), 0, false);
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadataWith("\"private\": true,"));
+        when(repositoryMetadataService.getRepositoryLatestCommit(
+                coordinates, "main"))
+                .thenReturn(commit());
+        when(repositoryTreeService.getRepositoryTree(coordinates, "main"))
+                .thenReturn(tree);
+        when(repositoryFileReader.readRelevantFiles(
+                coordinates, tree, "main"))
+                .thenReturn(new FileReadResult(List.of(), 0, 0));
+
+        RepositoryAnalysisService.AnalysisResult result =
+                service.analyze(REPOSITORY_URL);
+
+        assertEquals("demo", result.metadata().repositoryName());
+        verify(repositoryTreeService).getRepositoryTree(coordinates, "main");
+    }
+
+    private JsonNode metadataWith(String extraFields) throws Exception {
+        return objectMapper.readTree("""
+                {
+                  %s
+                  "name": "demo",
+                  "owner": {"login": "octocat"},
+                  "html_url": "https://github.com/acme/demo",
+                  "default_branch": "main",
+                  "visibility": "public"
+                }
+                """.formatted(extraFields));
     }
 
     private JsonNode metadata() throws Exception {

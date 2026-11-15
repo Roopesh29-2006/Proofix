@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +16,7 @@ import java.util.UUID;
 import com.proofix.backend.entity.Project;
 import com.proofix.backend.entity.ProjectRepositoryConnection;
 import com.proofix.backend.entity.RepositorySnapshot;
+import com.proofix.backend.exception.RepositoryAccessDeniedException;
 import com.proofix.backend.exception.ResourceNotFoundException;
 import com.proofix.backend.repository.ProjectRepository;
 import com.proofix.backend.repository.ProjectRepositoryConnectionRepository;
@@ -68,8 +70,8 @@ class RepositoryAnalysisOrchestrationServiceTest {
     }
 
     @Test
-    void urlOnlyAnalysisDoesNotRequireConnectionOrPersist() {
-        when(repositoryAnalysisService.analyze(STORED_URL))
+    void urlOnlyAnalysisIsPublicOnlyAndDoesNotRequireConnectionOrPersist() {
+        when(repositoryAnalysisService.analyzePublicRepository(STORED_URL))
                 .thenReturn(analysisResult);
 
         RepositoryAnalysisOrchestrationService.AnalysisOutcome outcome =
@@ -77,10 +79,26 @@ class RepositoryAnalysisOrchestrationServiceTest {
 
         assertSame(analysisResult, outcome.result());
         assertNull(outcome.snapshotId());
-        verify(repositoryAnalysisService).analyze(STORED_URL);
+        verify(repositoryAnalysisService).analyzePublicRepository(STORED_URL);
+        verify(repositoryAnalysisService, never()).analyze(any());
         verify(connectionRepository, never())
                 .findByRepositoryConnectionIdAndUserId(CONNECTION_ID, USER_ID);
         verify(persistenceService, never()).persist(connection, analysisResult);
+    }
+
+    @Test
+    void urlOnlyAnalysisPropagatesPrivateRepositoryRejection() {
+        RepositoryAccessDeniedException failure =
+                new RepositoryAccessDeniedException(
+                        "Private repositories require a project repository connection.");
+        when(repositoryAnalysisService.analyzePublicRepository(STORED_URL))
+                .thenThrow(failure);
+
+        assertSame(failure, assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.analyze(STORED_URL, null, USER_ID)));
+
+        verify(persistenceService, never()).persist(any(), any());
     }
 
     @Test
@@ -99,6 +117,23 @@ class RepositoryAnalysisOrchestrationServiceTest {
         assertEquals(SNAPSHOT_ID, outcome.snapshotId());
         verify(repositoryAnalysisService).analyze(STORED_URL);
         verify(persistenceService).persist(connection, analysisResult);
+    }
+
+    @Test
+    void connectionPathIsUnaffectedByPublicOnlyRule() {
+        RepositorySnapshot snapshot = new RepositorySnapshot();
+        setSnapshotId(snapshot, SNAPSHOT_ID);
+        givenOwnedActiveConnection();
+        when(repositoryAnalysisService.analyze(STORED_URL))
+                .thenReturn(analysisResult);
+        when(persistenceService.persist(connection, analysisResult))
+                .thenReturn(snapshot);
+
+        service.analyze(null, CONNECTION_ID, USER_ID);
+
+        verify(repositoryAnalysisService).analyze(STORED_URL);
+        verify(repositoryAnalysisService, never())
+                .analyzePublicRepository(any());
     }
 
     @Test

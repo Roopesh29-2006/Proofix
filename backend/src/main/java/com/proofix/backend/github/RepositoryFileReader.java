@@ -9,12 +9,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import com.proofix.backend.exception.GitHubApiException;
 import com.proofix.backend.github.RepositoryFileClassifier.FileCategory;
 import com.proofix.backend.github.RepositoryTreeService.RepositoryFile;
 import com.proofix.backend.github.RepositoryTreeService.RepositoryTree;
+import com.proofix.backend.redaction.SecretRedactor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
@@ -22,16 +22,9 @@ import tools.jackson.databind.JsonNode;
 @Service
 public class RepositoryFileReader {
 
-    private static final Pattern SECRET_ASSIGNMENT = Pattern.compile(
-            "(?i)(\\b(?:password|passwd|secret|token|api[_-]?key|"
-                    + "access[_-]?key)\\b\\s*[=:]\\s*)(['\"]?)([^'\"\\s,;]+)");
-
-    private static final Pattern PRIVATE_KEY = Pattern.compile(
-            "-----BEGIN [^-]+ PRIVATE KEY-----[\\s\\S]*?"
-                    + "-----END [^-]+ PRIVATE KEY-----");
-
     private final GitHubApiClient gitHubApiClient;
     private final RepositoryFileClassifier fileClassifier;
+    private final SecretRedactor secretRedactor;
     private final int maxFiles;
     private final long maxFileSizeBytes;
     private final long maxTotalContentBytes;
@@ -39,6 +32,7 @@ public class RepositoryFileReader {
     public RepositoryFileReader(
             GitHubApiClient gitHubApiClient,
             RepositoryFileClassifier fileClassifier,
+            SecretRedactor secretRedactor,
             @Value("${github.scan.max-files:100}") int maxFiles,
             @Value("${github.scan.max-file-size-bytes:1048576}")
             long maxFileSizeBytes,
@@ -51,9 +45,13 @@ public class RepositoryFileReader {
             throw new IllegalArgumentException(
                     "Repository scan limits must be greater than zero");
         }
+        if (secretRedactor == null) {
+            throw new IllegalArgumentException("Secret redactor is required");
+        }
 
         this.gitHubApiClient = gitHubApiClient;
         this.fileClassifier = fileClassifier;
+        this.secretRedactor = secretRedactor;
         this.maxFiles = maxFiles;
         this.maxFileSizeBytes = maxFileSizeBytes;
         this.maxTotalContentBytes = maxTotalContentBytes;
@@ -126,13 +124,14 @@ public class RepositoryFileReader {
                 continue;
             }
 
-            String redactedContent = redactSecrets(content);
+            SecretRedactor.RedactionResult redaction =
+                    secretRedactor.redact(repositoryFile.path(), content);
 
             files.add(new ScannedFile(
                     repositoryFile.path(),
                     fileClassifier.classify(repositoryFile.path()),
-                    redactedContent,
-                    !content.equals(redactedContent)));
+                    redaction.content(),
+                    redaction.redacted()));
             totalBytes += contentBytes.length;
         }
 
@@ -207,13 +206,6 @@ public class RepositoryFileReader {
                 || category == FileCategory.DEPENDENCY_MANIFEST
                 || category == FileCategory.CONFIGURATION
                 || category == FileCategory.DEPLOYMENT;
-    }
-
-    private static String redactSecrets(String content) {
-        String redacted = PRIVATE_KEY.matcher(content)
-                .replaceAll("[REDACTED_PRIVATE_KEY]");
-        return SECRET_ASSIGNMENT.matcher(redacted)
-                .replaceAll("$1$2[REDACTED]");
     }
 
     public record ScannedFile(
