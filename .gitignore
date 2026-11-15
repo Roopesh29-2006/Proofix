@@ -1,0 +1,51 @@
+# ---- Build output and generated files ----
+target/
+build/
+out/
+bin/
+*.class
+*.log
+logs/
+
+# ---- Secrets and local environment ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+application-local.properties
+application-local.yml
+application-secret*.properties
+
+# ---- Database dumps (schema baselines live in src/main/resources/db/migration) ----
+*.dump
+*.backup
+dump*.sql
+
+# ---- IDE / editor ----
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+
+# ---- OS and OneDrive artifacts ----
+desktop.ini
+Thumbs.db
+.DS_Store
+*.tmp
+~$*
+
+# ---- Project-specific exclusions ----
+backend/HELP.md
+backend/task_4_3_review.txt
+.github/modernize/
