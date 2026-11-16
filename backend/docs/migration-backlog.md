@@ -44,7 +44,9 @@ Not present in V1; design before implementing the matching features:
    widen the `runs_status_check`, `run_events_*_status_check` and (if it becomes
    worker-driven) the active-state CHECK/partial indexes in a new migration.
 5. **AWAITING expiry.** Runs in `AWAITING_PLAN_OK` / `AWAITING_FIX_OK` wait
-   forever and still count toward the per-user cap on unfinished Runs. Add a
+   forever. They do not count toward the per-user cap (QUEUED + active only),
+   so a user can accumulate any number of them, and approving several at once
+   puts them all into TESTING above the cap. Add a
    configurable expiry (e.g. 7 days since entering the state) enforced by the
    reaper, moving them to `CANCELLED` with a `SYSTEM` event. Needs an index on
    `updated_at WHERE status IN ('AWAITING_PLAN_OK','AWAITING_FIX_OK')`.

@@ -149,26 +149,27 @@ public class Run {
     }
 
     // ------------------------------------------------------------------
-    // Non-status fields (set by the service and the worker)
+    // Non-status fields. Package-private: only run-package services
+    // (RunLifecycle, and the worker steps in Build 1 commit 3) change them.
     // ------------------------------------------------------------------
 
-    public void setCommitSha(String commitSha) {
+    void setCommitSha(String commitSha) {
         this.commitSha = commitSha;
     }
 
-    public void setRunnerId(String runnerId) {
+    void setRunnerId(String runnerId) {
         this.runnerId = runnerId;
     }
 
-    public void setHeartbeatAt(OffsetDateTime heartbeatAt) {
+    void setHeartbeatAt(OffsetDateTime heartbeatAt) {
         this.heartbeatAt = heartbeatAt;
     }
 
-    public void setLoadModel(String loadModel) {
+    void setLoadModel(String loadModel) {
         this.loadModel = loadModel;
     }
 
-    public void requestCancel(OffsetDateTime now) {
+    void requestCancel(OffsetDateTime now) {
         this.cancelRequested = true;
         this.updatedAt = now;
     }

@@ -215,18 +215,42 @@ class RunStateMachineTest {
         assertEquals("worker heartbeat lost", run.getFailureReason());
     }
 
+    /** Every legal move out of an active state into an AWAITING or final state. */
+    static Stream<Arguments> activeToNonActive() {
+        List<Arguments> moves = new ArrayList<>();
+        for (RunStatus from : RunStatus.values()) {
+            if (!from.isActive()) {
+                continue;
+            }
+            for (RunStatus to : RunTransitions.allowedFrom(from)) {
+                if (to.isAwaiting() || to.isFinal()) {
+                    moves.add(Arguments.of(from, to));
+                }
+            }
+        }
+        return moves.stream();
+    }
+
     @Test
-    void leavingActiveWorkClearsTheRunner() {
-        Run run = walkTo(ANALYZING);
+    void activeToNonActiveCoversAwaitingAndFinalTargets() {
+        // ANALYZING: AWAITING_PLAN_OK, CANCELLED, FAILED; TESTING: CANCELLED, FAILED;
+        // INVESTIGATING: AWAITING_FIX_OK, DONE, CANCELLED, FAILED.
+        assertEquals(9, activeToNonActive().count());
+    }
+
+    @ParameterizedTest(name = "{0} -> {1} clears runner_id")
+    @MethodSource("activeToNonActive")
+    void leavingActiveWorkClearsTheRunner(RunStatus from, RunStatus to) {
+        Run run = walkTo(from);
         run.setRunnerId("worker-1");
 
-        machine.transition(run.getId(), AWAITING_PLAN_OK, RunActor.WORKER, null);
+        machine.transition(run.getId(), to, RunActor.WORKER, "step");
 
         assertNull(run.getRunnerId());
     }
 
     @Test
-    void activeToActiveKeepsTheRunner() {
+    void testingToInvestigatingKeepsTheRunner() {
         Run run = walkTo(TESTING);
         run.setRunnerId("worker-1");
 

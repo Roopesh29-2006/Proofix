@@ -2,8 +2,6 @@ package com.proofix.backend.run;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -80,8 +78,6 @@ public class RunStateMachine {
     }
 
     private OffsetDateTime now() {
-        // PostgreSQL stores microseconds; truncate so values round-trip exactly.
-        return OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC)
-                .truncatedTo(ChronoUnit.MICROS);
+        return RunTime.now(clock);
     }
 }
