@@ -325,6 +325,43 @@ class RepositoryAnalysisServiceTest {
     }
 
     @Test
+    void verifyPublicRepositoryAcceptsPublicRepositoryWithMetadataCallOnly()
+            throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadataWith("\"private\": false,"));
+
+        service.verifyPublicRepository(REPOSITORY_URL);
+
+        verify(repositoryMetadataService, never())
+                .getRepositoryLatestCommit(any(), any());
+        verifyNoInteractions(repositoryTreeService, repositoryFileReader);
+    }
+
+    @Test
+    void verifyPublicRepositoryRejectsPrivateRepository() throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadataWith("\"private\": true,"));
+
+        assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.verifyPublicRepository(REPOSITORY_URL));
+        verifyNoInteractions(repositoryTreeService, repositoryFileReader);
+    }
+
+    @Test
+    void verifyPublicRepositoryRejectsMissingPrivateFlag() throws Exception {
+        when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
+        when(repositoryMetadataService.getRepositoryMetadata(coordinates))
+                .thenReturn(metadata());
+
+        assertThrows(
+                RepositoryAccessDeniedException.class,
+                () -> service.verifyPublicRepository(REPOSITORY_URL));
+    }
+
+    @Test
     void publicOnlyAnalysisRejectsMissingPrivateFlag() throws Exception {
         when(gitHubUrlParser.parse(REPOSITORY_URL)).thenReturn(coordinates);
         when(repositoryMetadataService.getRepositoryMetadata(coordinates))

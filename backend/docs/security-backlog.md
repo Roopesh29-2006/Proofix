@@ -39,6 +39,8 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
    repository that does not exist, so a caller can probe which private
    repositories exist. Handle later, e.g. return the same response for both
    cases or stop using the server token on the one-off path.
+   `POST /api/runs` (Build 1) reuses the same public-repository check and
+   therefore has the same oracle.
 
 ## Error responses
 
@@ -49,3 +51,36 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
    be echoed the same way and could expose internal details. Replace with a
    dedicated validation exception for our own messages and a generic message
    for everything else.
+
+## Runs (Build 1)
+
+8. **GitHub rate limiting.** `POST /api/runs` makes a synchronous GitHub
+   metadata call with the shared server token for every request. One user (or
+   a script) can exhaust the server-wide GitHub quota and break analysis for
+   everyone. Add a per-user rate limit on Run creation and on one-off analysis,
+   handle GitHub's `X-RateLimit-Remaining` / 429 / secondary-limit responses
+   with backoff, and surface "try again later" without leaking quota details.
+   The per-user cap on unfinished Runs (default 3) limits concurrency, not
+   request rate.
+
+## Authentication
+
+9. **JWT remains valid after the user is deleted.** Tokens are only checked
+   for signature and expiry; nothing checks that the user still exists, and
+   there is no revocation. Build 1 handles it per endpoint: `POST /api/runs`
+   returns 401 (the cap lock finds no `users` row) and Run lookups return 404,
+   with a test proving no 500. Fix centrally: check the user (or a
+   token-version / `tokens_valid_after` column) in `JwtAuthenticationFilter`,
+   and add revocation on password change and account deletion.
+
+## Build 2 notes (real runner)
+
+10. **A runner must only claim its own user's Runs.** Build 1's claim query
+    (`RunRepository.lockNextClaimableId`) takes the oldest claimable Run of
+    *any* user, which is fine for the in-process fake worker only. A real
+    runner (user's machine or sandbox) must authenticate with a runner token
+    tied to one user, and claim, heartbeat and advance only Runs whose
+    `owner_user_id` matches that user; `runner_id` must come from the
+    server-side token, never from the request body. Needs an
+    `owner_user_id` filter (and index) on the claim query and tests that
+    runner A cannot claim, heartbeat or advance user B's Run.

@@ -60,6 +60,19 @@ public class RepositoryAnalysisService {
         return analyze(repositoryUrl, true);
     }
 
+    /**
+     * Checks that a repository is public using only the metadata call (no
+     * commit, tree or file requests). Same fail-closed rule as
+     * {@link #analyzePublicRepository}.
+     *
+     * @throws RepositoryAccessDeniedException if it is not public
+     */
+    public void verifyPublicRepository(String repositoryUrl) {
+        RepositoryCoordinates coordinates = gitHubUrlParser.parse(repositoryUrl);
+        requirePublicRepository(
+                repositoryMetadataService.getRepositoryMetadata(coordinates));
+    }
+
     private AnalysisResult analyze(String repositoryUrl, boolean publicOnly) {
         RepositoryCoordinates coordinates = gitHubUrlParser.parse(repositoryUrl);
         JsonNode metadataResponse =
