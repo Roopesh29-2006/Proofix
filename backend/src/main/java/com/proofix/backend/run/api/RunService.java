@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import com.proofix.backend.exception.BadRequestException;
 import com.proofix.backend.run.Run;
 import com.proofix.backend.run.RunLifecycle;
+import com.proofix.backend.run.RunLimits;
 import com.proofix.backend.service.RepositoryAnalysisService;
 
 /**
@@ -41,15 +42,15 @@ public class RunService {
     public RunResponse create(UUID owner, String repoUrl) {
         // 1. Strict URL rule (400), no I/O.
         String url = RunRepoUrl.normalize(repoUrl);
-        // 2. Cheap cap pre-check (short read-only transaction) so an
+        // 2. Cheap pre-check (short read-only transaction) so a deleted or
         //    over-cap user cannot drive GitHub calls.
-        int cap = properties.maxActivePerUser();
-        lifecycle.checkCap(owner, cap);
+        RunLimits limits = properties.limits();
+        lifecycle.checkCreateLimits(owner, limits);
         // 3. Network call to GitHub with no transaction open (403/404/5xx).
         repositoryAnalysisService.verifyPublicRepository(url);
-        // 4. Authoritative cap check and insert under the owner's row lock.
-        Run run = lifecycle.createWithinCap(
-                owner, url, properties.defaults().budgets(), cap);
+        // 4. Authoritative limit checks and insert under the owner's row lock.
+        Run run = lifecycle.createWithinLimits(
+                owner, url, properties.defaults().budgets(), limits);
         return RunResponse.from(run);
     }
 
@@ -78,7 +79,7 @@ public class RunService {
     }
 
     public RunResponse approve(UUID owner, UUID runId) {
-        return RunResponse.from(lifecycle.approve(owner, runId));
+        return RunResponse.from(lifecycle.approve(owner, runId, properties.limits()));
     }
 
     public RunResponse reject(UUID owner, UUID runId) {

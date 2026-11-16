@@ -9,9 +9,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import com.proofix.backend.security.JwtService;
 
 /**
- * Creates throwaway users in proofix_test and deletes them, with their Runs
- * and events, afterwards. Used by tests that need committed data (HTTP
- * requests and concurrency), so they cannot rely on transaction rollback.
+ * Creates throwaway users in proofix_test and deletes them, with their Runs,
+ * events and projects, afterwards. Used by tests that need committed data
+ * (HTTP requests and concurrency), so they cannot rely on rollback.
+ * TestDatabaseGuard guarantees this only ever runs against proofix_test.
  */
 final class RunTestUsers {
 
@@ -43,11 +44,21 @@ final class RunTestUsers {
         return count == null ? 0 : count;
     }
 
+    /**
+     * Claiming is global (oldest claimable Run of any user), so worker tests
+     * start from an empty runs table in proofix_test.
+     */
+    void purgeAllRuns() {
+        jdbc.update("DELETE FROM run_events");
+        jdbc.update("DELETE FROM runs");
+    }
+
     void deleteAll() {
         for (UUID id : created) {
             jdbc.update("DELETE FROM run_events WHERE run_id IN "
                     + "(SELECT id FROM runs WHERE owner_user_id = ?)", id);
             jdbc.update("DELETE FROM runs WHERE owner_user_id = ?", id);
+            jdbc.update("DELETE FROM projects WHERE user_id = ?", id);
             jdbc.update("DELETE FROM users WHERE user_id = ?", id);
         }
         created.clear();

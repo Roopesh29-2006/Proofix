@@ -1,6 +1,8 @@
 package com.proofix.backend.run;
 
 import static com.proofix.backend.run.RunStatus.ANALYZING;
+import static com.proofix.backend.run.RunStatus.AWAITING_FIX_OK;
+import static com.proofix.backend.run.RunStatus.AWAITING_PLAN_OK;
 import static com.proofix.backend.run.RunStatus.CANCELLED;
 import static com.proofix.backend.run.RunStatus.DONE;
 import static com.proofix.backend.run.RunStatus.INVESTIGATING;
@@ -30,9 +32,13 @@ import com.proofix.backend.exception.ResourceNotFoundException;
 @Service
 public class RunLifecycle {
 
-    /** Statuses that count toward the per-user cap: QUEUED and active. */
-    public static final Set<RunStatus> CAPPED_STATUSES =
+    /** Count toward {@link RunLimits#maxActive}: QUEUED and active. */
+    public static final Set<RunStatus> ACTIVE_CAP_STATUSES =
             Collections.unmodifiableSet(EnumSet.of(QUEUED, ANALYZING, TESTING, INVESTIGATING));
+
+    /** Count toward {@link RunLimits#maxUnfinished}: everything not final. */
+    public static final Set<RunStatus> UNFINISHED_STATUSES = Collections.unmodifiableSet(
+            EnumSet.of(QUEUED, ANALYZING, AWAITING_PLAN_OK, TESTING, INVESTIGATING, AWAITING_FIX_OK));
 
     private static final String NOT_FOUND = "Run not found";
 
@@ -51,14 +57,16 @@ public class RunLifecycle {
     // ------------------------------------------------------------------
 
     /**
-     * Cheap pre-check without a lock, so over-cap requests are refused
-     * before any GitHub call. Not authoritative; {@link #createWithinCap} is.
+     * Cheap pre-check without a lock, so deleted users and over-cap requests
+     * are refused before any GitHub call. Not authoritative;
+     * {@link #createWithinLimits} is.
      */
     @Transactional(readOnly = true)
-    public void checkCap(UUID owner, int cap) {
-        if (runRepository.countByOwnerUserIdAndStatusIn(owner, CAPPED_STATUSES) >= cap) {
-            throw capExceeded(cap);
+    public void checkCreateLimits(UUID owner, RunLimits limits) {
+        if (!runRepository.ownerExists(owner)) {
+            throw unknownUser();
         }
+        enforceCreateLimits(owner, limits);
     }
 
     /**
@@ -66,14 +74,25 @@ public class RunLifecycle {
      * transaction, so two parallel requests at the boundary cannot both pass.
      */
     @Transactional
-    public Run createWithinCap(UUID owner, String repoUrl, RunBudgets budgets, int cap) {
+    public Run createWithinLimits(UUID owner, String repoUrl, RunBudgets budgets, RunLimits limits) {
         if (runRepository.lockOwner(owner).isEmpty()) {
-            throw new AuthenticationCredentialsNotFoundException("User authentication is required");
+            throw unknownUser();
         }
-        if (runRepository.countByOwnerUserIdAndStatusIn(owner, CAPPED_STATUSES) >= cap) {
-            throw capExceeded(cap);
-        }
+        enforceCreateLimits(owner, limits);
         return stateMachine.create(owner, repoUrl, budgets);
+    }
+
+    private void enforceCreateLimits(UUID owner, RunLimits limits) {
+        if (runRepository.countByOwnerUserIdAndStatusIn(owner, ACTIVE_CAP_STATUSES)
+                >= limits.maxActive()) {
+            throw activeCapExceeded(limits.maxActive());
+        }
+        if (runRepository.countByOwnerUserIdAndStatusIn(owner, UNFINISHED_STATUSES)
+                >= limits.maxUnfinished()) {
+            throw new ConflictException("You already have " + limits.maxUnfinished()
+                    + " unfinished Runs (the limit), including Runs waiting for your approval. "
+                    + "Approve, reject or cancel one first.");
+        }
     }
 
     // ------------------------------------------------------------------
@@ -118,12 +137,25 @@ public class RunLifecycle {
         return stateMachine.transition(runId, CANCELLED, RunActor.USER, "cancelled by user");
     }
 
+    /**
+     * Plan approval puts the Run back into active work, so the active cap is
+     * re-checked under the owner's row lock (taken before the Run lock, the
+     * same order as create, so the two cannot deadlock).
+     */
     @Transactional
-    public Run approve(UUID owner, UUID runId) {
+    public Run approve(UUID owner, UUID runId, RunLimits limits) {
+        if (runRepository.lockOwner(owner).isEmpty()) {
+            throw new ResourceNotFoundException(NOT_FOUND);
+        }
         Run run = lockOwned(owner, runId);
         return switch (run.getStatus()) {
-            case AWAITING_PLAN_OK ->
-                    stateMachine.transition(runId, TESTING, RunActor.USER, "plan approved by user");
+            case AWAITING_PLAN_OK -> {
+                if (runRepository.countByOwnerUserIdAndStatusIn(owner, ACTIVE_CAP_STATUSES)
+                        >= limits.maxActive()) {
+                    throw activeCapExceeded(limits.maxActive());
+                }
+                yield stateMachine.transition(runId, TESTING, RunActor.USER, "plan approved by user");
+            }
             case AWAITING_FIX_OK ->
                     stateMachine.transition(runId, DONE, RunActor.USER, "fix approved by user");
             default -> throw notAwaiting(run);
@@ -148,7 +180,11 @@ public class RunLifecycle {
                 .orElseThrow(() -> new ResourceNotFoundException(NOT_FOUND));
     }
 
-    private static ConflictException capExceeded(int cap) {
+    private static AuthenticationCredentialsNotFoundException unknownUser() {
+        return new AuthenticationCredentialsNotFoundException("User authentication is required");
+    }
+
+    private static ConflictException activeCapExceeded(int cap) {
         return new ConflictException("You already have " + cap
                 + " queued or running Runs (the limit). Wait for one to finish or cancel one.");
     }

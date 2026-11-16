@@ -318,6 +318,127 @@ class RunApiIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // Per-user cap on unfinished Runs (QUEUED + active + AWAITING, default 10)
+    // ------------------------------------------------------------------
+
+    @Test
+    void unfinishedCapCountsAwaitingRunsAndReturns409() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            runIn(alice, AWAITING_PLAN_OK);
+            runIn(alice, AWAITING_FIX_OK);
+        }
+
+        createAs(alice, REPO)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", containsString("10")));
+
+        verify(repositoryAnalysisService, never()).verifyPublicRepository(anyString());
+        assertEquals(10, users.runCount(alice.id()));
+    }
+
+    @Test
+    void unfinishedCapAllowsTheTenthRun() throws Exception {
+        for (int i = 0; i < 9; i++) {
+            runIn(alice, AWAITING_PLAN_OK);
+        }
+
+        createAs(alice, REPO).andExpect(status().isCreated());
+        createAs(alice, REPO).andExpect(status().isConflict());
+    }
+
+    @Test
+    void finalRunsDoNotCountTowardTheUnfinishedCap() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            runIn(alice, DONE);
+            runIn(alice, FAILED);
+            runIn(alice, CANCELLED);
+        }
+
+        createAs(alice, REPO).andExpect(status().isCreated());
+    }
+
+    // ------------------------------------------------------------------
+    // Approving a plan re-checks the active cap
+    // ------------------------------------------------------------------
+
+    @Test
+    void approvingThePlanAtTheActiveCapIs409() throws Exception {
+        runIn(alice, QUEUED);
+        runIn(alice, ANALYZING);
+        runIn(alice, TESTING);
+        Run plan = runIn(alice, AWAITING_PLAN_OK);
+        int eventsBefore = eventRepository.findByRunIdOrderByIdAsc(plan.getId()).size();
+
+        postAs(alice, "/api/runs/" + plan.getId() + "/approve")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", containsString("3")));
+
+        assertEquals(AWAITING_PLAN_OK, reload(plan).getStatus());
+        assertEquals(eventsBefore, eventRepository.findByRunIdOrderByIdAsc(plan.getId()).size());
+    }
+
+    @Test
+    void approvingThePlanBelowTheActiveCapSucceeds() throws Exception {
+        runIn(alice, QUEUED);
+        runIn(alice, TESTING);
+        Run plan = runIn(alice, AWAITING_PLAN_OK);
+
+        postAs(alice, "/api/runs/" + plan.getId() + "/approve")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("TESTING")));
+    }
+
+    @Test
+    void approvingTheFixIsNotLimitedByTheActiveCap() throws Exception {
+        runIn(alice, QUEUED);
+        runIn(alice, QUEUED);
+        runIn(alice, QUEUED);
+        Run fix = runIn(alice, AWAITING_FIX_OK);
+
+        postAs(alice, "/api/runs/" + fix.getId() + "/approve")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("DONE")));
+    }
+
+    @Test
+    void rejectingIsNotLimitedByTheActiveCap() throws Exception {
+        runIn(alice, QUEUED);
+        runIn(alice, QUEUED);
+        runIn(alice, QUEUED);
+        Run plan = runIn(alice, AWAITING_PLAN_OK);
+
+        postAs(alice, "/api/runs/" + plan.getId() + "/reject")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("CANCELLED")));
+    }
+
+    // ------------------------------------------------------------------
+    // A deleted user with a still-valid token
+    // ------------------------------------------------------------------
+
+    @Test
+    void deletedUserWithAValidTokenGetsCleanErrorsNot500() throws Exception {
+        TestUser ghost = users.create();
+        jdbc.update("DELETE FROM users WHERE user_id = ?", ghost.id());
+
+        createAs(ghost, REPO)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error", is("Authentication required")));
+        verify(repositoryAnalysisService, never()).verifyPublicRepository(anyString());
+
+        UUID someRun = runIn(alice, AWAITING_PLAN_OK).getId();
+        getAs(ghost, "/api/runs/" + someRun).andExpect(status().isNotFound());
+        postAs(ghost, "/api/runs/" + someRun + "/cancel").andExpect(status().isNotFound());
+        postAs(ghost, "/api/runs/" + someRun + "/approve").andExpect(status().isNotFound());
+        postAs(ghost, "/api/runs/" + someRun + "/reject").andExpect(status().isNotFound());
+        getAs(ghost, "/api/runs")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(0)));
+
+        assertEquals(AWAITING_PLAN_OK, runRepository.findById(someRun).orElseThrow().getStatus());
+    }
+
+    // ------------------------------------------------------------------
     // GET
     // ------------------------------------------------------------------
 
