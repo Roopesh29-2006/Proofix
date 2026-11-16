@@ -14,6 +14,8 @@ import com.proofix.backend.dto.ProjectCreateRequest;
 import com.proofix.backend.dto.ProjectCreateResponse;
 import com.proofix.backend.dto.ProjectUpdateRequest;
 import com.proofix.backend.entity.Project;
+import com.proofix.backend.exception.ConflictException;
+import com.proofix.backend.exception.ResourceNotFoundException;
 import com.proofix.backend.repository.ProjectRepository;
 
 
@@ -51,7 +53,7 @@ public class ProjectService {
                 .existsByUserIdAndProjectNameIgnoreCaseAndDeletedAtIsNull(
                         userId, projectName)) {
 
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "A project with this name already exists");
         }
 
@@ -137,7 +139,7 @@ public ProjectCreateResponse updateProject(
             .findByProjectIdAndUserIdAndDeletedAtIsNull(
                     projectId, userId)
             .orElseThrow(() ->
-                    new IllegalArgumentException("Project not found"));
+                    new ResourceNotFoundException("Project not found"));
 
     // 3. Normalize project name
     String projectName = request.getProjectName()
@@ -152,7 +154,7 @@ public ProjectCreateResponse updateProject(
             && !project.getProjectName().equalsIgnoreCase(projectName);
 
     if (duplicateName) {
-        throw new IllegalArgumentException(
+        throw new ConflictException(
                 "A project with this name already exists");
     }
 
