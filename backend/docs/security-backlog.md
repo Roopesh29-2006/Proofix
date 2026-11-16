@@ -39,6 +39,8 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
    repository that does not exist, so a caller can probe which private
    repositories exist. Handle later, e.g. return the same response for both
    cases or stop using the server token on the one-off path.
+   `POST /api/runs` (Build 1) reuses the same public-repository check and
+   therefore has the same oracle.
 
 ## Error responses
 
@@ -49,3 +51,14 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
    be echoed the same way and could expose internal details. Replace with a
    dedicated validation exception for our own messages and a generic message
    for everything else.
+
+## Runs (Build 1)
+
+8. **GitHub rate limiting.** `POST /api/runs` makes a synchronous GitHub
+   metadata call with the shared server token for every request. One user (or
+   a script) can exhaust the server-wide GitHub quota and break analysis for
+   everyone. Add a per-user rate limit on Run creation and on one-off analysis,
+   handle GitHub's `X-RateLimit-Remaining` / 429 / secondary-limit responses
+   with backoff, and surface "try again later" without leaking quota details.
+   The per-user cap on unfinished Runs (default 3) limits concurrency, not
+   request rate.

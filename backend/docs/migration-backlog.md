@@ -34,3 +34,20 @@ Not present in V1; design before implementing the matching features:
   measured fact or a labelled hypothesis.
 - **Approvals**: the two human approvals (test plan, verified fix) with approver,
   decision, timestamp, the exact artifact version approved, and comments.
+
+## Run model follow-ups (found while building V2 `runs`)
+
+4. **`OPENING_PR` state.** CLAUDE.md says the verified fix is followed by
+   opening a PR, but approving at `AWAITING_FIX_OK` currently goes straight to
+   `DONE`. Add `OPENING_PR` (`AWAITING_FIX_OK -> OPENING_PR -> DONE | FAILED |
+   CANCELLED`) to `RunStatus`, `RunTransitions` and the transition tests, and
+   widen the `runs_status_check`, `run_events_*_status_check` and (if it becomes
+   worker-driven) the active-state CHECK/partial indexes in a new migration.
+5. **AWAITING expiry.** Runs in `AWAITING_PLAN_OK` / `AWAITING_FIX_OK` wait
+   forever and still count toward the per-user cap on unfinished Runs. Add a
+   configurable expiry (e.g. 7 days since entering the state) enforced by the
+   reaper, moving them to `CANCELLED` with a `SYSTEM` event. Needs an index on
+   `updated_at WHERE status IN ('AWAITING_PLAN_OK','AWAITING_FIX_OK')`.
+6. **Link `test_runs` to Runs.** When the TESTING phase starts producing real
+   load tests, add a nullable `test_runs.run_id` FK to `runs(id)` instead of
+   replacing `test_runs` (decided in Build 1: Runs sit beside it).
