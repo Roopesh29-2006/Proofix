@@ -1,6 +1,7 @@
 package com.proofix.backend.run;
 
 import static com.proofix.backend.run.RunStatus.ANALYZING;
+import static com.proofix.backend.run.RunStatus.AWAITING_PLAN_OK;
 import static com.proofix.backend.run.RunStatus.CANCELLED;
 import static com.proofix.backend.run.RunStatus.FAILED;
 import static com.proofix.backend.run.RunStatus.QUEUED;
@@ -13,6 +14,8 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.proofix.backend.exception.ResourceNotFoundException;
 
 /**
  * The worker's view of a Run. Every method is one short transaction that
@@ -60,9 +63,36 @@ public class RunWorkerOps {
                     "claimed by " + runnerId);
         }
         run.setRunnerId(runnerId);
+        run.setLastRunnerId(runnerId);
         run.setHeartbeatAt(now());
         runRepository.save(run);
         return Optional.of(new ClaimedRun(runId, runnerId, run.getStatus()));
+    }
+
+    /**
+     * Runner API claim: the oldest QUEUED Run of {@code owner} only (SKIP
+     * LOCKED), moved to ANALYZING with runner_id and heartbeat_at set in the
+     * same transaction. {@code owner} and {@code runnerId} come from the
+     * authenticated runner key, never from a request body.
+     */
+    @Transactional
+    public Optional<RunnerClaim> claimNextQueuedForOwner(UUID owner, String runnerId) {
+        if (owner == null) {
+            throw new IllegalArgumentException("owner is required");
+        }
+        requireRunner(runnerId);
+        Optional<UUID> next = runRepository.lockNextQueuedIdForOwner(owner);
+        if (next.isEmpty()) {
+            return Optional.empty();
+        }
+        UUID runId = next.get();
+        Run run = stateMachine.transition(runId, ANALYZING, RunActor.WORKER,
+                "claimed by runner " + runnerId);
+        run.setRunnerId(runnerId);
+        run.setLastRunnerId(runnerId);
+        run.setHeartbeatAt(now());
+        runRepository.save(run);
+        return Optional.of(new RunnerClaim(runId, run.getRepoUrl(), run.getStatus()));
     }
 
     /** Liveness only (no lock wait, no status change). False if not ours any more. */
@@ -120,6 +150,97 @@ public class RunWorkerOps {
     }
 
     // ------------------------------------------------------------------
+    // Runner API steps (per Run). One locked lookup checks the owner AND
+    // the runner: held now (runner_id) or held before (last_runner_id).
+    // Any other caller gets the same 404 as a missing Run.
+    // ------------------------------------------------------------------
+
+    /**
+     * Held: moves heartbeat_at only (no version or updated_at change) and
+     * reports cancel_requested. Held before: writes nothing; a final Run
+     * answers cancelRequested=true so the runner stops.
+     */
+    @Transactional
+    public RunnerHeartbeat heartbeatRunner(UUID owner, UUID runId, String runnerId) {
+        RunnerAccess access = lockForRunner(owner, runId, runnerId);
+        Run run = access.run();
+        if (access.held()) {
+            runRepository.touchHeartbeat(runId, runnerId, now());
+            return new RunnerHeartbeat(run.isCancelRequested(), run.getStatus());
+        }
+        return new RunnerHeartbeat(run.getStatus().isFinal() || run.isCancelRequested(),
+                run.getStatus());
+    }
+
+    /**
+     * Stores the plan and moves ANALYZING -> AWAITING_PLAN_OK under one lock.
+     * A pending cancel wins: CANCELLED, nothing stored. Any other state (a
+     * second report, a final Run, a Run this runner no longer holds) -> 409.
+     */
+    @Transactional
+    public RunStatus reportPlan(UUID owner, UUID runId, String runnerId, String planJson) {
+        if (planJson == null || planJson.isBlank()) {
+            throw new IllegalArgumentException("plan is required");
+        }
+        RunnerAccess access = lockForRunner(owner, runId, runnerId);
+        Run run = access.run();
+        if (!access.held() || run.getStatus() != ANALYZING) {
+            throw new IllegalRunTransitionException(run.getStatus(), AWAITING_PLAN_OK);
+        }
+        if (run.isCancelRequested()) {
+            stateMachine.transition(runId, CANCELLED, RunActor.WORKER, CANCEL_NOTE);
+            return CANCELLED;
+        }
+        run.setPlan(planJson);
+        return stateMachine.transition(runId, AWAITING_PLAN_OK, RunActor.WORKER, "plan reported")
+                .getStatus();
+    }
+
+    /**
+     * Fails a Run this runner holds (ANALYZING, TESTING, INVESTIGATING) with
+     * a runner-reportable code. A pending cancel does not change the outcome:
+     * the Run is FAILED, never CANCELLED. Not held -> 409, even where the
+     * transition table allows FAILED (an approved, unclaimed TESTING Run).
+     */
+    @Transactional
+    public RunStatus failRunner(UUID owner, UUID runId, String runnerId, FailureCode code,
+            String reason) {
+        if (code == null || !code.isRunnerReportable()) {
+            throw new IllegalArgumentException("code is not one a runner may report");
+        }
+        RunnerAccess access = lockForRunner(owner, runId, runnerId);
+        Run run = access.run();
+        if (!access.held()) {
+            throw new IllegalRunTransitionException(run.getStatus(), FAILED);
+        }
+        stateMachine.transition(runId, FAILED, RunActor.WORKER, reason).setFailureCode(code);
+        return FAILED;
+    }
+
+    private record RunnerAccess(Run run, boolean held) {
+    }
+
+    private RunnerAccess lockForRunner(UUID owner, UUID runId, String runnerId) {
+        if (owner == null || runId == null) {
+            throw new IllegalArgumentException("owner and runId are required");
+        }
+        requireRunner(runnerId);
+        Run run = runRepository.findByIdAndOwnerForUpdate(runId, owner)
+                .orElseThrow(RunWorkerOps::runNotFound);
+        if (runnerId.equals(run.getRunnerId()) && run.getStatus().isActive()) {
+            return new RunnerAccess(run, true);
+        }
+        if (runnerId.equals(run.getLastRunnerId())) {
+            return new RunnerAccess(run, false);
+        }
+        throw runNotFound();
+    }
+
+    private static ResourceNotFoundException runNotFound() {
+        return new ResourceNotFoundException("Run not found");
+    }
+
+    // ------------------------------------------------------------------
     // Reaper steps (re-check under the lock; the candidate query may be stale)
     // ------------------------------------------------------------------
 
@@ -133,7 +254,8 @@ public class RunWorkerOps {
         if (run.getHeartbeatAt() != null && !run.getHeartbeatAt().isBefore(cutoff)) {
             return false;
         }
-        stateMachine.transition(runId, FAILED, RunActor.SYSTEM, HEARTBEAT_LOST);
+        stateMachine.transition(runId, FAILED, RunActor.SYSTEM, HEARTBEAT_LOST)
+                .setFailureCode(FailureCode.RUNNER_LOST);
         return true;
     }
 
@@ -144,7 +266,8 @@ public class RunWorkerOps {
         if (run == null || !run.getStatus().isActive() || !run.exceedsMaxMinutes(now)) {
             return false;
         }
-        stateMachine.transition(runId, FAILED, RunActor.SYSTEM, OVER_BUDGET);
+        stateMachine.transition(runId, FAILED, RunActor.SYSTEM, OVER_BUDGET)
+                .setFailureCode(FailureCode.BUDGET_EXCEEDED);
         return true;
     }
 
