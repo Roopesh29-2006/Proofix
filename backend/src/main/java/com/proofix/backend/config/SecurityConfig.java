@@ -1,6 +1,7 @@
 
 package com.proofix.backend.config;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -25,6 +26,20 @@ public class SecurityConfig {
             JsonSecurityErrorHandler securityErrorHandler) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.securityErrorHandler = securityErrorHandler;
+    }
+
+    /**
+     * The JWT filter is a bean, so Spring Boot would also register it as a
+     * global servlet filter that runs outside (and before) the security
+     * chains. It must run only inside its own chain.
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterServletRegistration(
+            JwtAuthenticationFilter filter) {
+        FilterRegistrationBean<JwtAuthenticationFilter> registration =
+                new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
