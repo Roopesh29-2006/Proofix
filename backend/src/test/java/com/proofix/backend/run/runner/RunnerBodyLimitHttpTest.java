@@ -1,5 +1,7 @@
 package com.proofix.backend.run.runner;
 
+import static com.proofix.backend.run.runner.RunnerFixtures.INSTANCE;
+import static com.proofix.backend.run.runner.RunnerFixtures.INSTANCE_HEADER;
 import static com.proofix.backend.run.runner.RunnerFixtures.VERSION;
 import static com.proofix.backend.run.runner.RunnerFixtures.VERSION_HEADER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.proofix.backend.run.RunStateMachine;
+import com.proofix.backend.run.RunWorkerOps;
 import com.proofix.backend.runnerkey.CreatedRunnerKey;
 import com.proofix.backend.runnerkey.RunnerKeyService;
 import com.proofix.backend.security.JwtService;
@@ -50,6 +53,9 @@ class RunnerBodyLimitHttpTest {
     @Autowired
     private RunStateMachine machine;
 
+    @Autowired
+    private RunWorkerOps ops;
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5)).build();
     private RunnerFixtures fixtures;
@@ -57,7 +63,7 @@ class RunnerBodyLimitHttpTest {
 
     @BeforeEach
     void setUp() {
-        fixtures = new RunnerFixtures(jdbc, jwtService, keyService, machine);
+        fixtures = new RunnerFixtures(jdbc, jwtService, keyService, machine, ops);
         key = fixtures.key(fixtures.user());
     }
 
@@ -72,6 +78,7 @@ class RunnerBodyLimitHttpTest {
                 .timeout(Duration.ofSeconds(15))
                 .header("Authorization", "Bearer " + key.plaintext())
                 .header(VERSION_HEADER, VERSION)
+                .header(INSTANCE_HEADER, INSTANCE)
                 .header("Content-Type", "application/json")
                 .POST(body)
                 .build();
@@ -86,7 +93,7 @@ class RunnerBodyLimitHttpTest {
 
     @Test
     void oversizedChunkedBodyIs413() throws Exception {
-        String big = "{\"instanceId\": \"box-1\", \"pad\": \"" + "x".repeat(70_000) + "\"}";
+        String big = "{\"pad\": \"" + "x".repeat(70_000) + "\"}";
 
         HttpResponse<String> response = claim(chunked(big));
 
@@ -96,7 +103,7 @@ class RunnerBodyLimitHttpTest {
 
     @Test
     void oversizedBodyWithContentLengthIs413() throws Exception {
-        String big = "{\"instanceId\": \"box-1\", \"pad\": \"" + "x".repeat(70_000) + "\"}";
+        String big = "{\"pad\": \"" + "x".repeat(70_000) + "\"}";
 
         HttpResponse<String> response = claim(HttpRequest.BodyPublishers.ofString(big));
 
@@ -105,7 +112,7 @@ class RunnerBodyLimitHttpTest {
 
     @Test
     void smallChunkedBodyIsAccepted() throws Exception {
-        HttpResponse<String> response = claim(chunked("{\"instanceId\": \"box-1\"}"));
+        HttpResponse<String> response = claim(chunked("{}"));
 
         assertEquals(204, response.statusCode(), response.body());
     }

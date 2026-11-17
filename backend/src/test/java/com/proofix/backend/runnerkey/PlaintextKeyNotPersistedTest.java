@@ -106,14 +106,16 @@ class PlaintextKeyNotPersistedTest {
         mockMvc.perform(post("/api/runner/claim")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + key)
                         .header("X-Runner-Version", "1.2.0")
+                        .header("X-Runner-Instance", "box-1")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"instanceId\": \"box-1\"}"))
+                        .content("{}"))
                 .andExpect(status().isNoContent());
         mockMvc.perform(post("/api/runner/claim")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + alice.token())
                         .header("X-Runner-Version", "1.2.0")
+                        .header("X-Runner-Instance", "box-1")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"instanceId\": \"box-1\"}"))
+                        .content("{}"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/runner-keys/" + id + "/revoke")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + alice.token()))

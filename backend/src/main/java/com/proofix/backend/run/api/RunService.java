@@ -67,7 +67,7 @@ public class RunService {
         }
         Page<Run> result = lifecycle.list(owner, PageRequest.of(page, size, NEWEST_FIRST));
         return new RunPageResponse(
-                result.getContent().stream().map(RunResponse::from).toList(),
+                result.getContent().stream().map(RunSummary::from).toList(),
                 result.getNumber(),
                 result.getSize(),
                 result.getTotalElements(),

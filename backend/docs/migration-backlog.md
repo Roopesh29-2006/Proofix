@@ -53,3 +53,21 @@ Not present in V1; design before implementing the matching features:
 6. **Link `test_runs` to Runs.** When the TESTING phase starts producing real
    load tests, add a nullable `test_runs.run_id` FK to `runs(id)` instead of
    replacing `test_runs` (decided in Build 1: Runs sit beside it).
+
+## Runner API follow-ups (found while building Build 2A)
+
+7. **Claim approved TESTING Runs (Build 2B).** 2A claims QUEUED only, because
+   nothing continues a TESTING Run yet. Once an endpoint does, widen the claim
+   to `status IN ('QUEUED','TESTING')`; `idx_runs_claimable_owner` already
+   covers both.
+8. **Plan revise loop.** Let the user send a plan back for revision
+   (`AWAITING_PLAN_OK -> ANALYZING`) instead of only approve or reject. Needs
+   versioned plans (a `run_plans` table keyed by Run and version, the approved
+   version recorded on approval) and a new transition.
+9. **Live flow endpoint (Build 2B).** `POST /api/runner/runs/{id}/flow` for the
+   dashboard "angiography" view: per journey step, requests, errors, p95
+   latency and in-flight virtual users, sent periodically during TESTING.
+   Needs a storage decision (rolling window vs. table) and its own size caps.
+10. **Server-side failure codes for other system failures.** The fake worker's
+    "worker error" (and any future server-side failure) has no `failure_code`,
+    so the owner sees no fix hint. Add codes as they become real.

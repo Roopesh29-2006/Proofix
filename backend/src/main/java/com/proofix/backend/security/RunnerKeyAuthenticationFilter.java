@@ -69,7 +69,7 @@ public class RunnerKeyAuthenticationFilter extends OncePerRequestFilter {
         RunnerKeyIdentity id = identity.get();
         UsernamePasswordAuthenticationToken authentication =
                 UsernamePasswordAuthenticationToken.authenticated(
-                        new RunnerPrincipal(id.keyId(), id.ownerUserId()), null,
+                        new RunnerPrincipal(id.keyId(), id.ownerUserId(), null), null,
                         List.of(new SimpleGrantedAuthority(AUTHORITY)));
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);

@@ -59,6 +59,19 @@ public class Run {
     @Column(name = "failure_reason")
     private String failureReason;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_code", length = 40)
+    private FailureCode failureCode;
+
+    /** The runner that claimed this Run last; set on claim, never cleared. */
+    @Column(name = "last_runner_id", length = 100)
+    private String lastRunnerId;
+
+    /** The validated, canonical plan a runner reported (schema v1); NULL until then. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "plan")
+    private String plan;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "load_model")
     private String loadModel;
@@ -169,6 +182,19 @@ public class Run {
         this.loadModel = loadModel;
     }
 
+    void setLastRunnerId(String lastRunnerId) {
+        this.lastRunnerId = lastRunnerId;
+    }
+
+    void setPlan(String plan) {
+        this.plan = plan;
+    }
+
+    /** Only once the Run is FAILED (runs_failure_code_check). */
+    void setFailureCode(FailureCode failureCode) {
+        this.failureCode = failureCode;
+    }
+
     void requestCancel(OffsetDateTime now) {
         this.cancelRequested = true;
         this.updatedAt = now;
@@ -216,6 +242,18 @@ public class Run {
 
     public String getLoadModel() {
         return loadModel;
+    }
+
+    public FailureCode getFailureCode() {
+        return failureCode;
+    }
+
+    public String getLastRunnerId() {
+        return lastRunnerId;
+    }
+
+    public String getPlan() {
+        return plan;
     }
 
     public int getMaxMinutes() {

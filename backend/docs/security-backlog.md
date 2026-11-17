@@ -75,7 +75,7 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
 
 ## Build 2 notes (real runner)
 
-10. **A runner must only claim its own user's Runs.** Build 1's claim query
+10. **[DONE in Build 2A]** **A runner must only claim its own user's Runs.** Build 1's claim query
     (`RunRepository.lockNextClaimableId`) takes the oldest claimable Run of
     *any* user, which is fine for the in-process fake worker only. A real
     runner (user's machine or sandbox) must authenticate with a runner token
@@ -130,3 +130,22 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
     `<keyId>:` through `RunStateMachine.transition` with reason
     "runner key revoked", in the revoke transaction, instead of waiting for
     the reaper.
+14. **Lease token per claim (Build 2B).** The instance id is chosen by the
+    runner and is not a credential, so anything holding the key can act as
+    any instance, and a restarted process that reuses an instance id can keep
+    driving the old Run. Claim should return a random lease once, store only
+    its hash on the Run (`runs.lease_hash`, new migration) and require it on
+    every later per-Run call. With the lease, the instance header becomes a
+    label for logs.
+15. **Retire server-side repository fetching (local-first model).** In the
+    runner flow the server never fetches the repository: `repoUrl` in the
+    claim response is an identifier only. Retire `POST /api/repository/analyze`
+    and server-side repository snapshots. Items 5 (shared server token), 6
+    (private-repository existence oracle) and 8 (GitHub rate limiting) mostly
+    go away with them.
+16. **Approved-plan integrity (Build 2B).** The runner must execute exactly the
+    plan the user approved, i.e. the server's stored copy (fetched at TESTING
+    claim), never its own local version. Plans whose commands were redacted
+    (`redactedFields` lists `recipe.buildCommand` / `recipe.startCommand`)
+    cannot run as stored: before TESTING the secret must move to an
+    environment variable (named in `envVarNames`) and the plan be re-reported.

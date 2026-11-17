@@ -16,6 +16,7 @@ import com.proofix.backend.runnerkey.RunnerKeyService;
 import com.proofix.backend.security.JsonSecurityErrorHandler;
 import com.proofix.backend.security.JwtAuthenticationFilter;
 import com.proofix.backend.security.RequestBodyLimitFilter;
+import com.proofix.backend.security.RunnerInstanceFilter;
 import com.proofix.backend.security.RunnerKeyAuthenticationFilter;
 import com.proofix.backend.security.RunnerVersionFilter;
 
@@ -23,7 +24,8 @@ import jakarta.servlet.DispatcherType;
 
 /**
  * Two chains. {@code /api/runner/**} (order 1) accepts runner keys only:
- * runner-key filter, then version header, then body cap; the JWT filter is
+ * runner key (401), version header (426), instance header (400), body cap
+ * (413), in that order; the JWT filter is
  * not in it. Everything else (order 2) accepts JWTs only; the runner filters
  * are not in it. None of these filters is registered as a global servlet
  * filter.
@@ -91,8 +93,9 @@ public class SecurityConfig {
             .addFilterBefore(keyFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterAfter(new RunnerVersionFilter(runnerApi.minimumVersion()),
                 RunnerKeyAuthenticationFilter.class)
+            .addFilterAfter(new RunnerInstanceFilter(), RunnerVersionFilter.class)
             .addFilterAfter(new RequestBodyLimitFilter(runnerApi.maxBodyBytes()),
-                RunnerVersionFilter.class);
+                RunnerInstanceFilter.class);
 
         return http.build();
     }

@@ -1,5 +1,7 @@
 package com.proofix.backend.run.runner;
 
+import static com.proofix.backend.run.runner.RunnerFixtures.INSTANCE;
+import static com.proofix.backend.run.runner.RunnerFixtures.INSTANCE_HEADER;
 import static com.proofix.backend.run.runner.RunnerFixtures.VERSION;
 import static com.proofix.backend.run.runner.RunnerFixtures.VERSION_HEADER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +42,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.proofix.backend.run.RunStateMachine;
+import com.proofix.backend.run.RunWorkerOps;
 import com.proofix.backend.runnerkey.CreatedRunnerKey;
 import com.proofix.backend.runnerkey.RunnerKeyRepository;
 import com.proofix.backend.runnerkey.RunnerKeyService;
@@ -61,7 +64,7 @@ class RunnerAuthChainTest {
 
     private static final String UNAUTHENTICATED = "{\"error\":\"Authentication required\"}";
     private static final String CLAIM = "/api/runner/claim";
-    private static final String CLAIM_BODY = "{\"instanceId\": \"box-1\"}";
+    private static final String CLAIM_BODY = "{}";
 
     @Autowired
     private MockMvc mockMvc;
@@ -82,6 +85,9 @@ class RunnerAuthChainTest {
     private RunStateMachine machine;
 
     @Autowired
+    private RunWorkerOps ops;
+
+    @Autowired
     private ApplicationContext context;
 
     private RunnerFixtures fixtures;
@@ -90,7 +96,7 @@ class RunnerAuthChainTest {
 
     @BeforeEach
     void setUp() {
-        fixtures = new RunnerFixtures(jdbc, jwtService, keyService, machine);
+        fixtures = new RunnerFixtures(jdbc, jwtService, keyService, machine, ops);
         alice = fixtures.user();
         aliceKey = fixtures.key(alice);
         clearInvocations(jwtService, keyService, keyRepository);
@@ -102,7 +108,8 @@ class RunnerAuthChainTest {
     }
 
     private static MockHttpServletRequestBuilder claim() {
-        return post(CLAIM).contentType(MediaType.APPLICATION_JSON).content(CLAIM_BODY);
+        return post(CLAIM).header(INSTANCE_HEADER, INSTANCE)
+                .contentType(MediaType.APPLICATION_JSON).content(CLAIM_BODY);
     }
 
     private ResultActions claimWith(String authorization) throws Exception {
@@ -308,8 +315,9 @@ class RunnerAuthChainTest {
 
     @Test
     void bodiesOver64KbAreRejectedWith413() throws Exception {
-        String big = "{\"instanceId\": \"box-1\", \"pad\": \"" + "x".repeat(65_536) + "\"}";
+        String big = "{\"pad\": \"" + "x".repeat(65_536) + "\"}";
         mockMvc.perform(post(CLAIM)
+                        .header(INSTANCE_HEADER, INSTANCE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + aliceKey.plaintext())
                         .header(VERSION_HEADER, VERSION)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -320,11 +328,12 @@ class RunnerAuthChainTest {
 
     @Test
     void aBodyOfExactly64KbPassesTheCap() throws Exception {
-        String prefix = "{\"instanceId\": \"box-1\"}";
+        String prefix = "{}";
         String exact = prefix + " ".repeat(65_536 - prefix.length());
         assertEquals(65_536, exact.length());
 
         mockMvc.perform(post(CLAIM)
+                        .header(INSTANCE_HEADER, INSTANCE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + aliceKey.plaintext())
                         .header(VERSION_HEADER, VERSION)
                         .contentType(MediaType.APPLICATION_JSON)

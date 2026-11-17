@@ -69,7 +69,7 @@ class RunnerClaimConcurrencyTest {
 
     @BeforeEach
     void setUp() {
-        fixtures = new RunnerFixtures(jdbc, jwtService, keyService, machine);
+        fixtures = new RunnerFixtures(jdbc, jwtService, keyService, machine, ops);
         executor = Executors.newFixedThreadPool(8);
         alice = fixtures.user();
         bob = fixtures.user();
