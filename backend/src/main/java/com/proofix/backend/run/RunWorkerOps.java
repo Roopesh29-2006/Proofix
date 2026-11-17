@@ -65,6 +65,31 @@ public class RunWorkerOps {
         return Optional.of(new ClaimedRun(runId, runnerId, run.getStatus()));
     }
 
+    /**
+     * Runner API claim: the oldest QUEUED Run of {@code owner} only (SKIP
+     * LOCKED), moved to ANALYZING with runner_id and heartbeat_at set in the
+     * same transaction. {@code owner} and {@code runnerId} come from the
+     * authenticated runner key, never from a request body.
+     */
+    @Transactional
+    public Optional<RunnerClaim> claimNextQueuedForOwner(UUID owner, String runnerId) {
+        if (owner == null) {
+            throw new IllegalArgumentException("owner is required");
+        }
+        requireRunner(runnerId);
+        Optional<UUID> next = runRepository.lockNextQueuedIdForOwner(owner);
+        if (next.isEmpty()) {
+            return Optional.empty();
+        }
+        UUID runId = next.get();
+        Run run = stateMachine.transition(runId, ANALYZING, RunActor.WORKER,
+                "claimed by runner " + runnerId);
+        run.setRunnerId(runnerId);
+        run.setHeartbeatAt(now());
+        runRepository.save(run);
+        return Optional.of(new RunnerClaim(runId, run.getRepoUrl(), run.getStatus()));
+    }
+
     /** Liveness only (no lock wait, no status change). False if not ours any more. */
     @Transactional
     public boolean heartbeat(UUID runId, String runnerId) {

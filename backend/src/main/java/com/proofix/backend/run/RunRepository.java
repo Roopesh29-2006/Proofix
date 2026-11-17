@@ -66,6 +66,18 @@ public interface RunRepository extends JpaRepository<Run, UUID> {
     Optional<UUID> lockNextClaimableId();
 
     /**
+     * Runner API claim (security backlog #10): the oldest QUEUED Run of ONE
+     * owner, locked, skipping Runs locked by another transaction. Uses the
+     * partial index idx_runs_claimable_owner. Build 2A claims QUEUED only;
+     * approved TESTING Runs wait for an endpoint that continues them (2B).
+     */
+    @Query(value = "SELECT id FROM runs "
+            + "WHERE owner_user_id = :owner AND runner_id IS NULL AND status = 'QUEUED' "
+            + "ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED",
+            nativeQuery = true)
+    Optional<UUID> lockNextQueuedIdForOwner(@Param("owner") UUID owner);
+
+    /**
      * Liveness only: moves heartbeat_at for a Run this runner owns in an
      * active state. Never touches status, version or updated_at.
      */

@@ -102,6 +102,19 @@ class PlaintextKeyNotPersistedTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/runner-keys").header(HttpHeaders.AUTHORIZATION, "Bearer " + key))
                 .andExpect(status().isUnauthorized());
+        // The runner chain: authenticated claim, then a JWT on a runner endpoint.
+        mockMvc.perform(post("/api/runner/claim")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + key)
+                        .header("X-Runner-Version", "1.2.0")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"instanceId\": \"box-1\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/runner/claim")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + alice.token())
+                        .header("X-Runner-Version", "1.2.0")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"instanceId\": \"box-1\"}"))
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/runner-keys/" + id + "/revoke")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + alice.token()))
                 .andExpect(status().isOk());
