@@ -57,6 +57,31 @@ class SecretNeverLeaksTest {
     }
 
     @Test
+    void upperAndMixedCaseEnvFilesAreFlaggedAndNeverRead() {
+        String c1 = canary();
+        String c2 = canary();
+        Path repo = Fixtures.load("express-api", tmp);
+        Fixtures.write(repo, ".ENV", "A=" + c1 + "\n");
+        Fixtures.write(repo, "config/.Env.Local", "B=" + c2 + "\n");
+        Outcome o = RunnerHarness.scan(repo, tmp.resolve("out"));
+        assertEquals(0, o.exit());
+        assertTrue(o.hasWarning("SECRET_FILE_PRESENT", ".ENV"));
+        assertTrue(o.hasWarning("SECRET_FILE_PRESENT", "config/.Env.Local"));
+        assertFalse(o.everything().contains(c1));
+        assertFalse(o.everything().contains(c2));
+    }
+
+    @Test
+    void caseInsensitiveSecretNames() {
+        for (String n : new String[] {".ENV", ".Env", ".eNv", ".ENV.LOCAL", ".Env.Production"}) {
+            assertTrue(SecretFiles.isSecretName(n), n);
+        }
+        for (String n : new String[] {".ENV.EXAMPLE", ".Env.Sample", ".env.TEMPLATE", ".ENVRC"}) {
+            assertFalse(SecretFiles.isSecretName(n), n);
+        }
+    }
+
+    @Test
     void secretNameRules() {
         assertTrue(SecretFiles.isSecretName(".env"));
         assertTrue(SecretFiles.isSecretName(".env.local"));

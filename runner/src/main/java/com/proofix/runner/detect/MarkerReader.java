@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -61,26 +62,51 @@ public final class MarkerReader {
             return new MarkerData(null, null, file.size(), true);
         }
         Path p = root.resolve(file.path());
-        try (SeekableByteChannel ch = Files.newByteChannel(p, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
-            ByteArrayOutputStream out = new ByteArrayOutputStream((int) Math.min(file.size(), maxBytes) + 1);
-            ByteBuffer buf = ByteBuffer.allocate(8192);
-            long total = 0;
-            int n;
-            while ((n = ch.read(buf)) != -1) {
-                total += n;
-                if (total > maxBytes) { // file grew after the scan
-                    warnings.add(tooLarge(file));
-                    return new MarkerData(null, null, total, true);
-                }
-                out.write(buf.array(), 0, n);
-                buf.clear();
+        try {
+            // Re-check at read time: the file may have been replaced since the scan.
+            BasicFileAttributes attrs = Files.readAttributes(p, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (attrs.isSymbolicLink() || attrs.isDirectory()) {
+                warnings.add(new Warning(WarningCodes.SYMLINK_SKIPPED, file.path(),
+                        "marker file is no longer a regular file; not read"));
+                return new MarkerData(null, null, file.size(), false);
             }
-            byte[] bytes = out.toByteArray();
+            if (attrs.size() > maxBytes) {
+                warnings.add(tooLarge(file));
+                return new MarkerData(null, null, attrs.size(), true);
+            }
+        } catch (IOException e) {
+            warnings.add(new Warning(WarningCodes.PATH_UNREADABLE, file.path(), "marker file unreadable"));
+            return new MarkerData(null, null, file.size(), false);
+        }
+        try (SeekableByteChannel ch = Files.newByteChannel(p, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            byte[] bytes = readBounded(ch, maxBytes);
+            if (bytes == null) { // file grew after the size check
+                warnings.add(tooLarge(file));
+                return new MarkerData(null, null, file.size(), true);
+            }
             return new MarkerData(bytes, sha256(bytes), bytes.length, false);
         } catch (IOException e) {
             warnings.add(new Warning(WarningCodes.PATH_UNREADABLE, file.path(), "marker file unreadable"));
             return new MarkerData(null, null, file.size(), false);
         }
+    }
+
+    /**
+     * Reads at most maxBytes; returns null as soon as more than maxBytes are available, so a file
+     * that grows during the read is never buffered beyond the limit.
+     */
+    static byte[] readBounded(SeekableByteChannel ch, long maxBytes) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteBuffer buf = ByteBuffer.allocate(8192);
+        long total = 0;
+        int n;
+        while ((n = ch.read(buf)) != -1) {
+            total += n;
+            if (total > maxBytes) return null;
+            out.write(buf.array(), 0, n);
+            buf.clear();
+        }
+        return out.toByteArray();
     }
 
     private Warning tooLarge(ScannedFile file) {

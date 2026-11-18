@@ -130,6 +130,19 @@ class StackDetectorTest {
     }
 
     @Test
+    void deeplyNestedPackageJsonIsUnparseableNotACrash() throws IOException {
+        // Jackson 2.19 enforces StreamReadConstraints maxNestingDepth = 1000 by default.
+        assertTrue(com.fasterxml.jackson.core.StreamReadConstraints.defaults().getMaxNestingDepth() <= 1000);
+        String deep = "{\"dependencies\":{\"express\":\"4\"},\"x\":" + "[".repeat(5000) + "]".repeat(5000) + "}";
+        Detection d = detect(Map.of("package.json", deep));
+        Stack s = d.stacks().get(0);
+        assertFalse(s.evidence().confirmed());
+        assertEquals("MARKER_UNPARSEABLE", s.evidence().confirmReason());
+        assertEquals("tooling", s.role());
+        assertTrue(d.warnings().stream().anyMatch(w -> w.code().equals("MARKER_UNPARSEABLE")));
+    }
+
+    @Test
     void pythonFrameworkInPyproject() throws IOException {
         Detection d = detect(Map.of("pyproject.toml", "[project]\ndependencies = [\"FastAPI>=0.110\"]\n"));
         assertEquals("backend", d.stacks().get(0).role());
