@@ -140,6 +140,11 @@ The file is deterministic: fixed key order, 2-space indent, LF line endings, UTF
   - Stacks are sorted root first, then by path.
   - `matched` includes the marker files of all members and is sorted by path.
   - Warnings are sorted by code, then path.
+- **`sha256`** is computed over the working-tree bytes exactly as read from disk. Line-ending
+  settings such as `core.autocrlf` change those bytes, so the same commit can give different
+  evidence hashes on different machines. Compare hashes only between scans made on the same
+  checkout. The runner's own fixtures are marked `-text` in `.gitattributes`, so they keep the
+  same bytes on every OS.
 - **`facts`** is always empty in 2B-0a. Its element shape, `{name, value, status, label, source, evidence: [{path, line}]}`, is reserved for 2B-0b.
 
 **Warning codes:**
