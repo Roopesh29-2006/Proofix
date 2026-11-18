@@ -149,3 +149,25 @@ rule currently covers only `.properties`, `.yml/.yaml`, `.json` and `.env`.
     (`redactedFields` lists `recipe.buildCommand` / `recipe.startCommand`)
     cannot run as stored: before TESTING the secret must move to an
     environment variable (named in `envVarNames`) and the plan be re-reported.
+
+## Runner (Build 2B-0a, `runner/`)
+
+17. **Full time-of-check/time-of-use protection.** `PathGuard` checks each path
+    during the scan and `MarkerReader` re-checks a marker (no-follow attributes,
+    size) and opens it with `NOFOLLOW_LINKS` at read time, but a file or a parent
+    directory can still be swapped between those steps. Full protection needs
+    handle-relative opens (`openat`/`O_NOFOLLOW` per path segment on POSIX,
+    handle-based checks on Windows) or verifying the opened handle's file id
+    against the scanned one.
+18. **Hard links inside a scanned folder.** A hard link looks like an ordinary
+    regular file, so the no-follow checks cannot see it; a hard link to a file
+    outside the repository (e.g. a user's secrets file) would be listed and, if
+    it has a marker name, read. Consider skipping regular files with a link
+    count > 1 (`unix:nlink` on POSIX, `GetFileInformationByHandle` on Windows),
+    at least for marker files.
+19. **Windows reserved file names.** Paths with segments such as `CON`, `PRN`,
+    `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9` (with or without an extension),
+    or ending in a dot or space, can refer to devices or a different file on
+    Windows. A git listing from a repository created on another OS can contain
+    them. Reject such segments in `PathGuard.lexical` on Windows with a
+    dedicated warning, and add tests.
