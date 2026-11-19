@@ -37,8 +37,9 @@ public final class JavaVersionResolver {
     public static final String RULE_PLUGIN_INHERITED = "compiler-plugin-config-inherited";
     public static final String RULE_UNREAD_PARENT = "parent-not-read";
 
-    private static final Pattern LEGACY = Pattern.compile("^1\\.(\\d+)$");
-    private static final Pattern MAJOR = Pattern.compile("^\\d+$");
+    // Bounded so a hostile value can never overflow Integer.parseInt later.
+    private static final Pattern LEGACY = Pattern.compile("^1\\.(\\d{1,3})$");
+    private static final Pattern MAJOR = Pattern.compile("^\\d{1,3}$");
 
     /** "1.8" -> "8", "21" -> "21"; anything else -> null. */
     public static String normalize(String v) {

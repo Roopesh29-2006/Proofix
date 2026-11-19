@@ -1,5 +1,6 @@
 package com.proofix.runner.config;
 
+import com.proofix.runner.config.jdk.JavaVersionConflict;
 import com.proofix.runner.config.maven.LoadedPom;
 import com.proofix.runner.config.maven.MavenFacts;
 import com.proofix.runner.config.spring.SpringConfigFacts;
@@ -46,7 +47,9 @@ public final class ConfigFactsExtractor {
             for (String dir : dirs) {
                 MavenFacts.Module m = MavenFacts.extract(ctx, dir, cache);
                 if (m == null) continue;
-                facts.add(m.javaVersion());
+                facts.add(m.app()
+                        ? JavaVersionConflict.apply(ctx, m.javaVersion(), dir, s.path())
+                        : m.javaVersion());
                 facts.addAll(m.facts());
                 if (m.app()) SpringConfigFacts.extract(ctx, m, env, facts);
             }
