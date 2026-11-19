@@ -24,4 +24,6 @@ public final class WarningCodes {
 
     public static final String PARENT_OUTSIDE_REPO = "PARENT_OUTSIDE_REPO";
     public static final String PARENT_NOT_FOUND = "PARENT_NOT_FOUND";
+    public static final String CONFIG_UNPARSEABLE = "CONFIG_UNPARSEABLE";
+    public static final String LITERAL_SECRET = "LITERAL_SECRET";
 }
