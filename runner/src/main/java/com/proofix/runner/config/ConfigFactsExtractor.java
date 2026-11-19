@@ -2,6 +2,7 @@ package com.proofix.runner.config;
 
 import com.proofix.runner.config.maven.LoadedPom;
 import com.proofix.runner.config.maven.MavenFacts;
+import com.proofix.runner.config.spring.SpringConfigFacts;
 import com.proofix.runner.detect.MarkerReader;
 import com.proofix.runner.detect.model.Detection;
 import com.proofix.runner.detect.model.Role;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Runs the config-fact extractors for every backend java-maven stack (root and member modules).
@@ -35,6 +37,7 @@ public final class ConfigFactsExtractor {
         ConfigContext ctx = new ConfigContext(scan, reader);
         Map<String, LoadedPom> cache = new HashMap<>();
         List<FactEntry> facts = new ArrayList<>();
+        Map<String, SpringConfigFacts.EnvAcc> env = new TreeMap<>();
         for (Stack s : detection.stacks()) {
             if (!MAVEN_KIND.equals(s.kind()) || !Role.BACKEND.equals(s.role())) continue;
             List<String> dirs = new ArrayList<>();
@@ -45,8 +48,10 @@ public final class ConfigFactsExtractor {
                 if (m == null) continue;
                 facts.add(m.javaVersion());
                 facts.addAll(m.facts());
+                if (m.app()) SpringConfigFacts.extract(ctx, m, env, facts);
             }
         }
+        facts.addAll(SpringConfigFacts.envFacts(env));
         return new Result(facts, ctx.warnings());
     }
 }
