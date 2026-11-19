@@ -97,7 +97,7 @@ class QuickcartFixtureTest {
     @Test
     void schemaShape() {
         JsonNode j = out.json();
-        assertEquals(1, j.get("schemaVersion").asInt());
+        assertEquals(2, j.get("schemaVersion").asInt());
         assertEquals("walk", j.get("repo").get("fileSource").asText());
         assertTrue(j.get("repo").get("commitSha").isNull());
         assertTrue(j.get("facts").isArray());
