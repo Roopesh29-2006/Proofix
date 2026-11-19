@@ -101,7 +101,15 @@ class QuickcartFixtureTest {
         assertEquals("walk", j.get("repo").get("fileSource").asText());
         assertTrue(j.get("repo").get("commitSha").isNull());
         assertTrue(j.get("facts").isArray());
-        assertEquals(0, j.get("facts").size());
+        // No Java level is declared anywhere in this fixture and there is no app module.
+        assertEquals(2, j.get("facts").size());
+        for (JsonNode f : j.get("facts")) {
+            assertEquals("java.version", f.get("name").asText());
+            assertEquals("UNRESOLVED", f.get("status").asText());
+            assertEquals("no Java version declared", f.get("reason").asText());
+        }
+        assertEquals(List.of("api", "common"), List.of(j.get("facts").get(0).get("module").asText(),
+                j.get("facts").get(1).get("module").asText()));
         assertTrue(out.hasWarning("NOT_A_GIT_REPO", null));
         assertEquals(List.of("schemaVersion", "repo", "scan", "stacks", "testTarget", "facts", "warnings"), fields(j));
         assertEquals(List.of("id", "kind", "path", "role", "parent", "members", "evidence"),
