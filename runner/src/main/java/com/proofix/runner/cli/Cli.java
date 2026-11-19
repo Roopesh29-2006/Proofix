@@ -1,5 +1,7 @@
 package com.proofix.runner.cli;
 
+import com.proofix.runner.config.ConfigFactsExtractor;
+import com.proofix.runner.detect.MarkerReader;
 import com.proofix.runner.detect.StackDetector;
 import com.proofix.runner.detect.model.Detection;
 import com.proofix.runner.facts.FactsBuilder;
@@ -61,7 +63,9 @@ public final class Cli {
             ScanResult scan = scannerFactory.apply(opts).scan(repo);
             Detection detection = new StackDetector(opts.limits().maxMarkerBytes()).detect(scan);
             List<Warning> secrets = SecretFiles.find(scan);
-            facts = FactsBuilder.build(scan, detection, secrets);
+            ConfigFactsExtractor.Result config = ConfigFactsExtractor.extract(scan, detection,
+                    new MarkerReader(scan.root(), opts.limits().maxMarkerBytes()));
+            facts = FactsBuilder.build(scan, detection, secrets, config);
             json = FactsWriter.toBytes(facts);
         } catch (IOException | RuntimeException e) {
             err.println("error: scan failed (" + e.getClass().getSimpleName() + ")");
@@ -85,7 +89,7 @@ public final class Cli {
 
     private static void summarize(Facts f, PrintStream err) {
         err.println("scan: " + f.scan().filesSeen() + " files via " + f.repo().fileSource()
-                + ", " + f.stacks().size() + " stack(s), test target "
+                + ", " + f.stacks().size() + " stack(s), " + f.facts().size() + " fact(s), test target "
                 + (f.testTarget().stackId() != null ? f.testTarget().stackId() : f.testTarget().status())
                 + " (" + f.testTarget().reason() + ")");
         for (Warning w : f.warnings()) {

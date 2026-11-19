@@ -1,5 +1,6 @@
 package com.proofix.runner.facts;
 
+import com.proofix.runner.config.ConfigFactsExtractor;
 import com.proofix.runner.detect.model.Detection;
 import com.proofix.runner.facts.model.Facts;
 import com.proofix.runner.scan.WarningCodes;
@@ -11,7 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** Assembles facts.json from the scan, the detection and the secret-file warnings. */
+/** Assembles facts.json from the scan, the detection, the secret-file warnings and the config facts. */
 public final class FactsBuilder {
     private FactsBuilder() {}
 
@@ -19,10 +20,16 @@ public final class FactsBuilder {
             WarningCodes.DEPTH_LIMIT_HIT, WarningCodes.FILE_LIMIT_HIT, WarningCodes.FILE_TOO_LARGE);
 
     public static Facts build(ScanResult scan, Detection detection, List<Warning> secretWarnings) {
+        return build(scan, detection, secretWarnings, new ConfigFactsExtractor.Result(List.of(), List.of()));
+    }
+
+    public static Facts build(ScanResult scan, Detection detection, List<Warning> secretWarnings,
+                              ConfigFactsExtractor.Result config) {
         List<Warning> warnings = new ArrayList<>();
         warnings.addAll(scan.warnings());
         warnings.addAll(detection.warnings());
         warnings.addAll(secretWarnings);
+        warnings.addAll(config.warnings());
         warnings.sort(Warning.ORDER);
         List<Warning> unique = new ArrayList<>();
         for (Warning w : warnings) {
@@ -40,7 +47,7 @@ public final class FactsBuilder {
                 new Facts.Scan(scan.files().size(), scan.skippedDirs(), new ArrayList<>(limitsHit)),
                 detection.stacks(),
                 detection.testTarget(),
-                List.of(),
+                config.facts(),
                 unique);
     }
 }

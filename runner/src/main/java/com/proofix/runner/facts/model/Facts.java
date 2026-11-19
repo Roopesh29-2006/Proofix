@@ -7,16 +7,16 @@ import com.proofix.runner.scan.model.Warning;
 
 import java.util.List;
 
-/** Root of facts.json (schemaVersion 1). Deterministic: no timestamps, no absolute paths. */
+/** Root of facts.json (schemaVersion 2). Deterministic: no timestamps, no absolute paths. */
 @JsonPropertyOrder({"schemaVersion", "repo", "scan", "stacks", "testTarget", "facts", "warnings"})
 public record Facts(int schemaVersion, Repo repo, Scan scan, List<Stack> stacks, TestTarget testTarget,
-                    List<Fact> facts, List<Warning> warnings) {
+                    List<FactEntry> facts, List<Warning> warnings) {
 
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     public Facts {
         stacks = List.copyOf(stacks);
-        facts = List.copyOf(facts);
+        facts = facts.stream().sorted(FactEntry.ORDER).toList();
         warnings = List.copyOf(warnings);
     }
 

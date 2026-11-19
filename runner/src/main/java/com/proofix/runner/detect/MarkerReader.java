@@ -23,8 +23,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The only class that reads file contents. It reads marker files only, at most maxBytes, without
- * following links, and refuses secret-file names outright.
+ * The only class that reads file contents. It reads marker files and the allowlisted config files
+ * in {@link RuleTable#CONTENT_FILES} only, at most maxBytes, without following links, and refuses
+ * secret-file names outright (that check runs first and wins over both allowlists).
  */
 public final class MarkerReader {
 
@@ -46,8 +47,11 @@ public final class MarkerReader {
     }
 
     public MarkerData read(ScannedFile file) {
-        if (SecretFiles.isSecretName(file.fileName()) || !RuleTable.isAnyMarker(file.fileName())) {
-            throw new IllegalArgumentException("refusing to read a non-marker file");
+        if (SecretFiles.isSecretName(file.fileName())) {
+            throw new IllegalArgumentException("refusing to read a secret file");
+        }
+        if (!RuleTable.isAnyMarker(file.fileName()) && !RuleTable.isContentFile(file)) {
+            throw new IllegalArgumentException("refusing to read a non-allowlisted file");
         }
         return cache.computeIfAbsent(file.path(), k -> load(file));
     }

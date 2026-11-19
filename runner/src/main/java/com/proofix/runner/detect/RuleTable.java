@@ -1,5 +1,7 @@
 package com.proofix.runner.detect;
 
+import com.proofix.runner.scan.model.ScannedFile;
+
 import java.util.List;
 
 /**
@@ -24,6 +26,36 @@ public final class RuleTable {
             new Rule("php", "php", "php", List.of(List.of("composer.json"))),
             new Rule("rust", "rust", "rust", List.of(List.of("Cargo.toml"))),
             new Rule("dotnet", "dotnet", "dotnet", List.of(List.of("*.csproj", "*.sln"))));
+
+    /**
+     * A non-marker file whose CONTENT may be read for config facts. {@code dir} is the directory
+     * the file must sit in, matched as a trailing path segment sequence ("src/main/resources"
+     * matches "src/main/resources" and "api/src/main/resources"); null means any directory.
+     */
+    public record ContentFile(String pattern, String dir) {}
+
+    private static final String RESOURCES = "src/main/resources";
+
+    public static final List<ContentFile> CONTENT_FILES = List.of(
+            new ContentFile("application.yml", RESOURCES),
+            new ContentFile("application.yaml", RESOURCES),
+            new ContentFile("application.properties", RESOURCES),
+            new ContentFile("application-*.yml", RESOURCES),
+            new ContentFile("application-*.yaml", RESOURCES),
+            new ContentFile("application-*.properties", RESOURCES),
+            new ContentFile("Dockerfile", null),
+            new ContentFile(".java-version", null));
+
+    public static boolean isContentFile(ScannedFile file) {
+        for (ContentFile c : CONTENT_FILES) {
+            if (Rule.matches(c.pattern(), file.fileName()) && inDir(file.dir(), c.dir())) return true;
+        }
+        return false;
+    }
+
+    private static boolean inDir(String fileDir, String required) {
+        return required == null || fileDir.equals(required) || fileDir.endsWith("/" + required);
+    }
 
     public static boolean isAnyMarker(String fileName) {
         for (Rule r : RULES) {

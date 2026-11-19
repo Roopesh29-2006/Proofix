@@ -36,7 +36,7 @@ class CliTest {
         Path repo = Fixtures.load("express-api", tmp);
         ByteArrayOutputStream so = new ByteArrayOutputStream();
         assertEquals(0, run(so, "scan", repo.toString()));
-        assertTrue(so.toString(StandardCharsets.UTF_8).contains("\"schemaVersion\": 1"));
+        assertTrue(so.toString(StandardCharsets.UTF_8).contains("\"schemaVersion\": 2"));
     }
 
     @Test
