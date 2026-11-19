@@ -75,8 +75,10 @@ owner's Runs). No Gemini, sandbox, k6 or investigation yet.
 - **Local-first:** the runner reads the repo on the user's machine; the server never sees code.
   2B-0a does NOT call the server, Gemini or Docker. The backend Maven/Gradle parsers move in 2B-0b.
 - `scan` -> `ScanResult` (file names and sizes only) -> `StackDetector` (rule table in
-  `RuleTable`, data not branches) -> `facts.json` schemaVersion 1 (deterministic: fixed
-  order, LF, no timestamps, no absolute paths). Schema and rules: `runner/README.md`.
+  `RuleTable`, data not branches) -> `ConfigFactsExtractor` (Build 2B-0b-1: VERIFIED Maven and
+  Spring Boot config facts with path/line evidence; secret values never stored) -> `facts.json`
+  schemaVersion 2 (deterministic: fixed order, LF, no timestamps, no absolute paths). Schema and
+  rules: `runner/README.md`.
 - **Safety rules (do not weaken):** every path from git or the walk goes through `PathGuard`
   (inside root, never follow symlinks/junctions); `GitProcess` is the only process launcher and
   allows exactly `ls-files`, `rev-parse HEAD`, `status --porcelain`; `MarkerReader` is the only

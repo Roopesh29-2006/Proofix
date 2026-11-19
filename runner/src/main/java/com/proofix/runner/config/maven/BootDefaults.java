@@ -13,9 +13,9 @@ import java.util.regex.Pattern;
  *
  * <p>Verified 2026-11-19 against the starter-parent POMs in the local ~/.m2: 3.0.5 sets
  * java.version 17 with maven.compiler.source/target = ${java.version}; 3.2.5, 3.5.0, 4.0.2, 4.0.6,
- * 4.1.0 and 4.1.2 set java.version 17 with maven.compiler.release = ${java.version}. 3.3 and 3.4
- * are included as part of the approved 3.2-3.5 range. Boot 2.x and 3.1 were not available to
- * verify and are deliberately absent: they resolve to UNRESOLVED.
+ * 4.1.0 and 4.1.2 set java.version 17 with maven.compiler.release = ${java.version}. Boot 2.x,
+ * 3.1, 3.3 and 3.4 were not available to verify and are deliberately absent: they resolve to
+ * UNRESOLVED.
  */
 public final class BootDefaults {
     private BootDefaults() {}
@@ -28,8 +28,6 @@ public final class BootDefaults {
     private static final Map<String, Map<String, String>> TABLE = Map.of(
             "3.0", SOURCE_TARGET,
             "3.2", RELEASE,
-            "3.3", RELEASE,
-            "3.4", RELEASE,
             "3.5", RELEASE,
             "4.0", RELEASE,
             "4.1", RELEASE);

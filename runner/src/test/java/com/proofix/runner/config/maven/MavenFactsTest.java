@@ -202,7 +202,7 @@ class MavenFactsTest {
 
     @Test
     void unverifiedBootVersionsAreUnresolved() {
-        for (String v : new String[] {"2.7.18", "3.1.4"}) {
+        for (String v : new String[] {"2.7.18", "3.1.4", "3.3.5", "3.4.1"}) {
             Path r0 = tmp.resolve("repo");
             r0.toFile().renameTo(tmp.resolve("old-" + v).toFile());
             Run r = ConfigHarness.run(repo(rootPom(bootParent(v), ""), modulePom("")));
