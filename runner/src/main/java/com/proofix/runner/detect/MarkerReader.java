@@ -23,8 +23,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The only class that reads file contents. It reads marker files and the allowlisted config files
- * in {@link RuleTable#CONTENT_FILES} only, at most maxBytes, without following links, and refuses
+ * The only class that reads file contents. It reads marker files, the allowlisted config files
+ * in {@link RuleTable#CONTENT_FILES} and Java sources ({@link RuleTable#isJavaSource}) only, at
+ * most maxBytes, without following links, and refuses
  * secret-file names outright (that check runs first and wins over both allowlists).
  */
 public final class MarkerReader {
@@ -50,9 +51,12 @@ public final class MarkerReader {
         if (SecretFiles.isSecretName(file.fileName())) {
             throw new IllegalArgumentException("refusing to read a secret file");
         }
-        if (!RuleTable.isAnyMarker(file.fileName()) && !RuleTable.isContentFile(file)) {
+        boolean source = RuleTable.isJavaSource(file);
+        if (!RuleTable.isAnyMarker(file.fileName()) && !RuleTable.isContentFile(file) && !source) {
             throw new IllegalArgumentException("refusing to read a non-allowlisted file");
         }
+        // Java sources are read once each and not cached: there can be thousands of them.
+        if (source) return load(file);
         return cache.computeIfAbsent(file.path(), k -> load(file));
     }
 

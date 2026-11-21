@@ -12,15 +12,19 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** Assembles facts.json from the scan, the detection, the secret-file warnings and the config facts. */
+/**
+ * Assembles facts.json from the scan, the detection, the secret-file warnings, the config facts and
+ * the Java source facts (endpoints).
+ */
 public final class FactsBuilder {
     private FactsBuilder() {}
 
     private static final Set<String> LIMIT_CODES = Set.of(
-            WarningCodes.DEPTH_LIMIT_HIT, WarningCodes.FILE_LIMIT_HIT, WarningCodes.FILE_TOO_LARGE);
+            WarningCodes.DEPTH_LIMIT_HIT, WarningCodes.FILE_LIMIT_HIT, WarningCodes.FILE_TOO_LARGE,
+            WarningCodes.SOURCE_LIMIT_HIT);
 
     public static Facts build(ScanResult scan, Detection detection, List<Warning> secretWarnings) {
-        return build(scan, detection, secretWarnings, new ConfigFactsExtractor.Result(List.of(), List.of()));
+        return build(scan, detection, secretWarnings, ConfigFactsExtractor.Result.empty());
     }
 
     public static Facts build(ScanResult scan, Detection detection, List<Warning> secretWarnings,
@@ -48,6 +52,8 @@ public final class FactsBuilder {
                 detection.stacks(),
                 detection.testTarget(),
                 config.facts(),
+                config.endpoints(),
+                config.endpointsComplete(),
                 unique);
     }
 }

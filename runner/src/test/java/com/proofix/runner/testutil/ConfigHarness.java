@@ -4,6 +4,7 @@ import com.proofix.runner.config.ConfigFactsExtractor;
 import com.proofix.runner.detect.MarkerReader;
 import com.proofix.runner.detect.StackDetector;
 import com.proofix.runner.detect.model.Detection;
+import com.proofix.runner.facts.model.Endpoint;
 import com.proofix.runner.facts.model.EnvVarFact;
 import com.proofix.runner.facts.model.Fact;
 import com.proofix.runner.facts.model.FactEntry;
@@ -22,7 +23,8 @@ import java.util.List;
 public final class ConfigHarness {
     private ConfigHarness() {}
 
-    public record Run(List<FactEntry> facts, List<Warning> warnings) {
+    public record Run(List<FactEntry> facts, List<Warning> warnings, List<Endpoint> endpoints,
+                      boolean endpointsComplete) {
 
         public List<Fact> all(String module, String name) {
             return facts.stream().filter(e -> e instanceof Fact).map(e -> (Fact) e)
@@ -51,6 +53,21 @@ public final class ConfigHarness {
                     .map(e -> (EnvVarFact) e).findFirst().orElse(null);
         }
 
+        public List<Endpoint> endpoints(String method, String path) {
+            return endpoints.stream().filter(e -> e.method().equals(method) && java.util.Objects.equals(e.path(), path))
+                    .toList();
+        }
+
+        public Endpoint endpoint(String method, String path) {
+            List<Endpoint> l = endpoints(method, path);
+            if (l.size() != 1) throw new AssertionError("expected one " + method + " " + path + " but got " + endpoints);
+            return l.get(0);
+        }
+
+        public List<Warning> warnings(String code) {
+            return warnings.stream().filter(w -> w.code().equals(code)).toList();
+        }
+
         public boolean warned(String code, String path) {
             return warnings.stream().anyMatch(w -> w.code().equals(code) && (path == null || path.equals(w.path())));
         }
@@ -61,12 +78,16 @@ public final class ConfigHarness {
     }
 
     public static Run run(Path repo, Limits limits) {
+        return run(repo, limits, com.proofix.runner.source.JavaSources.MAX_PARSED);
+    }
+
+    public static Run run(Path repo, Limits limits, int maxParsedSources) {
         try {
             ScanResult scan = Scanner.forRepo(limits).scan(repo);
             Detection d = new StackDetector(limits.maxMarkerBytes()).detect(scan);
             ConfigFactsExtractor.Result r = ConfigFactsExtractor.extract(scan, d,
-                    new MarkerReader(scan.root(), limits.maxMarkerBytes()));
-            return new Run(r.facts(), r.warnings());
+                    new MarkerReader(scan.root(), limits.maxMarkerBytes()), maxParsedSources);
+            return new Run(r.facts(), r.warnings(), r.endpoints(), r.endpointsComplete());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -74,6 +95,11 @@ public final class ConfigHarness {
 
     public static boolean cites(Fact f, String path, int line) {
         return f.evidence().stream().anyMatch(e -> e.path().equals(path) && e.line() != null && e.line() == line);
+    }
+
+    public static boolean cites(List<FactEvidence> ev, String rule, String path, int line) {
+        return ev.stream().anyMatch(e -> e.rule().equals(rule) && e.path().equals(path)
+                && e.line() != null && e.line() == line);
     }
 
     public static boolean cites(Fact f, String rule) {

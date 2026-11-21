@@ -177,7 +177,7 @@ class QuickcartConfigFixtureTest {
         assertEquals(0, exit);
         assertFalse(so.toString(StandardCharsets.UTF_8).contains(canary));
         assertFalse(se.toString(StandardCharsets.UTF_8).contains(canary));
-        assertTrue(so.toString(StandardCharsets.UTF_8).contains("\"schemaVersion\": 2"));
+        assertTrue(so.toString(StandardCharsets.UTF_8).contains("\"schemaVersion\": 3"));
     }
 
     @Test

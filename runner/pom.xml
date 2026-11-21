@@ -14,6 +14,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jackson.version>2.19.0</jackson.version>
         <snakeyaml.version>2.4</snakeyaml.version>
+        <javaparser.version>3.28.2</javaparser.version>
         <junit.version>5.12.2</junit.version>
     </properties>
 
@@ -28,6 +29,12 @@
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
             <version>${snakeyaml.version}</version>
+        </dependency>
+        <dependency>
+            <!-- Java source parsing (read-only, never compiled or run) for endpoint and entry-point facts. -->
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>${javaparser.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

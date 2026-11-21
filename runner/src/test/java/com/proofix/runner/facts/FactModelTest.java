@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Shape, ordering and invariants of the schemaVersion 2 fact model and the extended Warning. */
+/** Shape, ordering and invariants of the fact model (schemaVersion 2, still in 3) and the extended Warning. */
 class FactModelTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -84,7 +84,8 @@ class FactModelTest {
     @Test
     void envVarFactShape() throws Exception {
         JsonNode e = json(new EnvVarFact("env.PORT", false, "8080", List.of(ev("a.yml", 2, "r"))));
-        assertEquals(List.of("name", "required", "default", "evidence"), fields(e));
+        assertEquals(List.of("name", "required", "default", "evidence", "reason"), fields(e));
+        assertTrue(e.get("reason").isNull());
         assertTrue(json(new EnvVarFact("env.DB_PASSWORD", true, null, List.of())).get("default").isNull());
         assertThrows(IllegalArgumentException.class, () -> new EnvVarFact("env.X", true, "1", List.of()));
         assertThrows(IllegalArgumentException.class, () -> new EnvVarFact("PORT", false, null, List.of()));
@@ -124,13 +125,13 @@ class FactModelTest {
                 known("api", "dependency", null, "g:b"),
                 known("api", "dependency", null, "g:a"));
         Facts facts = new Facts(Facts.SCHEMA_VERSION, new Facts.Repo(null, false, "walk"),
-                new Facts.Scan(0, List.of(), List.of()), List.of(), null, in, List.of());
+                new Facts.Scan(0, List.of(), List.of()), List.of(), null, in, List.of(), false, List.of());
         List<String> order = facts.facts().stream().map(e -> e instanceof Fact f
                 ? f.module() + "|" + f.name() + "|" + f.profile() + "|" + f.value() : e.name()).toList();
         assertEquals(List.of("env.PORT",
                 "api|dependency|null|g:a", "api|dependency|null|g:b",
                 "api|server.port|default|8080", "api|server.port|prod|9090",
                 "common|dependency|null|g:b"), order);
-        assertEquals(2, Facts.SCHEMA_VERSION);
+        assertEquals(3, Facts.SCHEMA_VERSION);
     }
 }

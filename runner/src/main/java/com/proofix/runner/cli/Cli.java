@@ -89,7 +89,9 @@ public final class Cli {
 
     private static void summarize(Facts f, PrintStream err) {
         err.println("scan: " + f.scan().filesSeen() + " files via " + f.repo().fileSource()
-                + ", " + f.stacks().size() + " stack(s), " + f.facts().size() + " fact(s), test target "
+                + ", " + f.stacks().size() + " stack(s), " + f.facts().size() + " fact(s), "
+                + f.endpoints().size() + " endpoint(s)" + (f.endpointsComplete() ? "" : " (incomplete)")
+                + ", test target "
                 + (f.testTarget().stackId() != null ? f.testTarget().stackId() : f.testTarget().status())
                 + " (" + f.testTarget().reason() + ")");
         for (Warning w : f.warnings()) {

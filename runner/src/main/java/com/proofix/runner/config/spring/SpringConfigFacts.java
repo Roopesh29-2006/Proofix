@@ -51,6 +51,9 @@ public final class SpringConfigFacts {
     public static final String RULE_ENV = "env-placeholder";
     public static final String RULE_ACTUATOR = "actuator-dependency";
     public static final String RULE_DS_KIND = "datasource-url-scheme";
+    public static final String RULE_VALUE = "value-annotation";
+    public static final String RULE_GETENV = "system-getenv";
+    public static final String GETENV_REASON = "read via System.getenv; the code may handle absence";
 
     private static final Pattern URL = Pattern.compile(
             "^jdbc:([a-z0-9]+)://(?:[^@/?;#]*@)?([A-Za-z0-9.\\-]+|\\[[0-9A-Fa-f:.]+])(?::(\\d{1,5}))?/([A-Za-z0-9_.\\-]+)(?:[?;].*)?$");
@@ -71,6 +74,8 @@ public final class SpringConfigFacts {
     /** Accumulates env var uses across all modules. */
     public static final class EnvAcc {
         boolean required;
+        /** Used through a ${...} placeholder (config or @Value), not only System.getenv. */
+        boolean placeholder;
         boolean withheld;
         final Set<String> defaults = new TreeSet<>();
         final List<FactEvidence> evidence = new ArrayList<>();
@@ -132,25 +137,47 @@ public final class SpringConfigFacts {
         new TreeMap<>(env).forEach((name, a) -> {
             String def = null;
             if (!a.required && !a.withheld && a.defaults.size() == 1) def = a.defaults.iterator().next();
-            out.add(new EnvVarFact(EnvVarFact.PREFIX + name, a.required, def, a.evidence));
+            out.add(new EnvVarFact(EnvVarFact.PREFIX + name, a.required, def, a.evidence,
+                    a.placeholder ? null : GETENV_REASON));
         });
         return out;
     }
 
     private static void recordEnv(ConfigContext ctx, ConfigEntry e, ConfigContext.Source src, Map<String, EnvAcc> env) {
         for (Placeholders.Placeholder p : e.placeholders()) {
-            if (!p.envStyle()) continue;
-            EnvAcc a = env.computeIfAbsent(p.name(), k -> new EnvAcc());
-            a.evidence.add(ctx.cite(src, RULE_ENV, e.line()));
-            if (!p.hasDefault()) {
-                a.required = true;
-            } else if (e.secretKey() || SecretKeys.isSecret(p.name()) || p.defaultValue() == null
-                    || p.defaultValue().contains("${")) {
-                a.withheld = true;
-            } else {
-                a.defaults.add(p.defaultValue());
-            }
+            recordPlaceholder(env, p, e.secretKey(), ctx.cite(src, RULE_ENV, e.line()));
         }
+    }
+
+    private static void recordPlaceholder(Map<String, EnvAcc> env, Placeholders.Placeholder p, boolean secretKey,
+                                          FactEvidence ev) {
+        if (!p.envStyle()) return;
+        EnvAcc a = env.computeIfAbsent(p.name(), k -> new EnvAcc());
+        a.placeholder = true;
+        a.evidence.add(ev);
+        if (!p.hasDefault()) {
+            a.required = true;
+        } else if (secretKey || SecretKeys.isSecret(p.name()) || p.defaultValue() == null
+                || p.defaultValue().contains("${")) {
+            a.withheld = true;
+        } else {
+            a.defaults.add(p.defaultValue());
+        }
+    }
+
+    /**
+     * Env vars in a Spring @Value text: every UPPER_SNAKE ${NAME} / ${NAME:default}, as in config
+     * files. SpEL text (#{...}) is skipped.
+     */
+    public static void recordValueAnnotation(Map<String, EnvAcc> env, String text, FactEvidence ev) {
+        if (text.contains("#{")) return;
+        for (Placeholders.Placeholder p : Placeholders.parse(text).placeholders()) recordPlaceholder(env, p, false, ev);
+    }
+
+    /** A System.getenv("NAME") literal: evidence only; it never makes a variable required. */
+    public static void recordGetenv(Map<String, EnvAcc> env, String name, FactEvidence ev) {
+        if (!Placeholders.ENV_NAME.matcher(name).matches()) return;
+        env.computeIfAbsent(name, k -> new EnvAcc()).evidence.add(ev);
     }
 
     static Derived derive(ConfigEntry e) {
