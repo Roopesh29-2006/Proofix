@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Shape, ordering and invariants of the schemaVersion 2 fact model and the extended Warning. */
+/** Shape, ordering and invariants of the fact model (schemaVersion 2, still in 3) and the extended Warning. */
 class FactModelTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -125,13 +125,13 @@ class FactModelTest {
                 known("api", "dependency", null, "g:b"),
                 known("api", "dependency", null, "g:a"));
         Facts facts = new Facts(Facts.SCHEMA_VERSION, new Facts.Repo(null, false, "walk"),
-                new Facts.Scan(0, List.of(), List.of()), List.of(), null, in, List.of());
+                new Facts.Scan(0, List.of(), List.of()), List.of(), null, in, List.of(), false, List.of());
         List<String> order = facts.facts().stream().map(e -> e instanceof Fact f
                 ? f.module() + "|" + f.name() + "|" + f.profile() + "|" + f.value() : e.name()).toList();
         assertEquals(List.of("env.PORT",
                 "api|dependency|null|g:a", "api|dependency|null|g:b",
                 "api|server.port|default|8080", "api|server.port|prod|9090",
                 "common|dependency|null|g:b"), order);
-        assertEquals(2, Facts.SCHEMA_VERSION);
+        assertEquals(3, Facts.SCHEMA_VERSION);
     }
 }

@@ -97,7 +97,7 @@ class QuickcartFixtureTest {
     @Test
     void schemaShape() {
         JsonNode j = out.json();
-        assertEquals(2, j.get("schemaVersion").asInt());
+        assertEquals(3, j.get("schemaVersion").asInt());
         assertEquals("walk", j.get("repo").get("fileSource").asText());
         assertTrue(j.get("repo").get("commitSha").isNull());
         assertTrue(j.get("facts").isArray());
@@ -111,7 +111,8 @@ class QuickcartFixtureTest {
         assertEquals(List.of("api", "common"), List.of(j.get("facts").get(0).get("module").asText(),
                 j.get("facts").get(1).get("module").asText()));
         assertTrue(out.hasWarning("NOT_A_GIT_REPO", null));
-        assertEquals(List.of("schemaVersion", "repo", "scan", "stacks", "testTarget", "facts", "warnings"), fields(j));
+        assertEquals(List.of("schemaVersion", "repo", "scan", "stacks", "testTarget", "facts", "endpoints",
+                "endpointsComplete", "warnings"), fields(j));
         assertEquals(List.of("id", "kind", "path", "role", "parent", "members", "evidence"),
                 fields(j.get("stacks").get(0)));
     }
