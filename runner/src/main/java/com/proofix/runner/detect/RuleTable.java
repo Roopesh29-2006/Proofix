@@ -53,6 +53,26 @@ public final class RuleTable {
         return false;
     }
 
+    /**
+     * [SEC] A Java source whose CONTENT may be read for endpoint, entry-point and env facts: a
+     * {@code *.java} file anywhere below a {@code src/main/java} directory. A path with a
+     * {@code src/test} segment pair anywhere is never a source, even below src/main/java.
+     */
+    public static boolean isJavaSource(ScannedFile file) {
+        String name = file.fileName();
+        if (!name.endsWith(".java") || name.length() <= ".java".length()) return false;
+        String[] dirs = file.dir().split("/");
+        boolean underMain = false;
+        for (int i = 0; i + 1 < dirs.length; i++) {
+            if (dirs[i].equals("src") && dirs[i + 1].equals("test")) return false;
+            if (i + 2 < dirs.length && dirs[i].equals("src") && dirs[i + 1].equals("main")
+                    && dirs[i + 2].equals("java")) {
+                underMain = true;
+            }
+        }
+        return underMain;
+    }
+
     private static boolean inDir(String fileDir, String required) {
         return required == null || fileDir.equals(required) || fileDir.endsWith("/" + required);
     }

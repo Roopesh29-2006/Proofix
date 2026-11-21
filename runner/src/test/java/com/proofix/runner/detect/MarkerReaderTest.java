@@ -132,6 +132,52 @@ class MarkerReaderTest {
     }
 
     @Test
+    void javaSourceUnderSrcMainJavaIsReadAndNotCached() throws IOException {
+        Path root = tmp.resolve("repo");
+        String rel = "api/src/main/java/com/x/A.java";
+        Fixtures.write(root, rel, "class A {}");
+        MarkerReader r = new MarkerReader(root, 1000);
+        MarkerReader.MarkerData d = r.read(new ScannedFile(rel, 10));
+        assertTrue(d.readable());
+        Files.writeString(root.resolve(rel), "class B {}");
+        // Not cached: a second read sees the current bytes.
+        assertEquals("class B {}", new String(r.read(new ScannedFile(rel, 10)).bytes(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void javaSourcesOutsideSrcMainJavaAreRefused() {
+        MarkerReader r = new MarkerReader(tmp, 1000);
+        for (String p : new String[] {"A.java", "src/A.java", "src/main/A.java", "src/test/java/A.java",
+                "api/src/test/java/com/x/A.java", "src/test/x/src/main/java/A.java",
+                "src/main/java/src/test/A.java", "src/main/resources/A.java", "src/main/java/A.jav",
+                "src/main/java/.java"}) {
+            assertThrows(IllegalArgumentException.class, () -> r.read(new ScannedFile(p, 1)), p);
+        }
+    }
+
+    @Test
+    void javaSourceAllowlistMatchesOnlySrcMainJava() {
+        assertTrue(RuleTable.isJavaSource(new ScannedFile("src/main/java/A.java", 1)));
+        assertTrue(RuleTable.isJavaSource(new ScannedFile("api/src/main/java/com/x/A.java", 1)));
+        assertFalse(RuleTable.isJavaSource(new ScannedFile("api/src/main/java", 1)));
+        assertFalse(RuleTable.isJavaSource(new ScannedFile("api/src/test/java/com/x/A.java", 1)));
+        assertFalse(RuleTable.isJavaSource(new ScannedFile("api/src/main/kotlin/A.java", 1)));
+    }
+
+    @Test
+    void javaSourceReplacedBySymlinkAfterScanIsNotRead() throws IOException {
+        String canary = "canary-" + UUID.randomUUID();
+        Path root = tmp.resolve("repo");
+        Fixtures.write(tmp, "outside/S.java", "class S { String k = \"" + canary + "\"; }");
+        String rel = "src/main/java/S.java";
+        Files.createDirectories(root.resolve(rel).getParent());
+        Links.symlinkOrSkip(root.resolve(rel), tmp.resolve("outside/S.java"));
+        MarkerReader r = new MarkerReader(root, 1000);
+        assertFalse(r.read(new ScannedFile(rel, 20)).readable());
+        assertTrue(warned(r, WarningCodes.SYMLINK_SKIPPED, rel));
+    }
+
+    @Test
     void regularMarkerIsReadAndHashed() {
         Path root = tmp.resolve("repo");
         Fixtures.write(root, "go.mod", "module x\n");
