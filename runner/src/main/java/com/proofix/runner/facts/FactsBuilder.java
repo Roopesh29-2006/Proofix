@@ -20,7 +20,7 @@ public final class FactsBuilder {
             WarningCodes.DEPTH_LIMIT_HIT, WarningCodes.FILE_LIMIT_HIT, WarningCodes.FILE_TOO_LARGE);
 
     public static Facts build(ScanResult scan, Detection detection, List<Warning> secretWarnings) {
-        return build(scan, detection, secretWarnings, new ConfigFactsExtractor.Result(List.of(), List.of()));
+        return build(scan, detection, secretWarnings, ConfigFactsExtractor.Result.empty());
     }
 
     public static Facts build(ScanResult scan, Detection detection, List<Warning> secretWarnings,

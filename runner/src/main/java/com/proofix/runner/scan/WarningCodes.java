@@ -26,4 +26,10 @@ public final class WarningCodes {
     public static final String PARENT_NOT_FOUND = "PARENT_NOT_FOUND";
     public static final String CONFIG_UNPARSEABLE = "CONFIG_UNPARSEABLE";
     public static final String LITERAL_SECRET = "LITERAL_SECRET";
+
+    public static final String SOURCE_UNPARSEABLE = "SOURCE_UNPARSEABLE";
+    public static final String SOURCE_LIMIT_HIT = "SOURCE_LIMIT_HIT";
+    public static final String ENDPOINTS_NOT_COVERED = "ENDPOINTS_NOT_COVERED";
+    public static final String DUPLICATE_ENDPOINT = "DUPLICATE_ENDPOINT";
+    public static final String ENV_NAME_COMPUTED = "ENV_NAME_COMPUTED";
 }
