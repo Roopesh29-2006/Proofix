@@ -1,9 +1,10 @@
-# DevBuddy runner — `scan` (Builds 2B-0a, 2B-0b-1)
+# DevBuddy runner — `scan` (Builds 2B-0a, 2B-0b-1, 2B-0b-2)
 
 The runner runs on the user's machine and reads their repository locally; the DevBuddy server
 never sees code. This first component scans a repository and writes `facts.json`, a
-deterministic description of which stacks it contains and of VERIFIED config facts read from
-Maven and Spring Boot files (2B-0b-1). It does **not** contact the server,
+deterministic description of which stacks it contains, of VERIFIED config facts read from
+Maven and Spring Boot files (2B-0b-1), and of the HTTP endpoints, entry point and env var names
+read from Java source (2B-0b-2). It does **not** contact the server,
 Gemini or Docker, and it never executes anything from the repository.
 
 ```
@@ -37,11 +38,13 @@ Without `--out`, the JSON goes to stdout. A one-line summary and warning codes g
 5. **Detect stacks** from marker files (rule table below), confirm them by reading those marker files, and assign roles and a test target.
 6. **Flag secret files.** `.env` and `.env.*` (except `.env.example`, `.env.sample`, `.env.template`) raise `SECRET_FILE_PRESENT` with the **path only**.
 7. **Extract config facts** for every backend `java-maven` stack (see "Config facts" below).
+8. **Read Java source facts** for the same modules: endpoints, entry point, env var names in code (see "Source facts" below).
 
 ## What is never read
 
 - **Secret files** (`.env`, `.env.*`): never opened.
-- **Contents:** only marker files (`package.json`, `pom.xml`, `requirements.txt`, …) and the content allowlist in `RuleTable.CONTENT_FILES` are read, at most 2 MB each, without following links, all through `MarkerReader`. Larger files get `sha256: null` and a `FILE_TOO_LARGE` warning. The allowlist is `application.{yml,yaml,properties}` and `application-*.{yml,yaml,properties}` directly in a `src/main/resources/` directory, plus `Dockerfile` and `.java-version` anywhere.
+- **Contents:** only marker files (`package.json`, `pom.xml`, `requirements.txt`, …) and the content allowlist in `RuleTable.CONTENT_FILES` are read, at most 2 MB each, without following links, all through `MarkerReader`. Larger files get `sha256: null` and a `FILE_TOO_LARGE` warning. The allowlist is `application.{yml,yaml,properties}` and `application-*.{yml,yaml,properties}` directly in a `src/main/resources/` directory, plus `Dockerfile` and `.java-version` anywhere, plus `*.java` anywhere below a `src/main/java/` directory (`RuleTable.isJavaSource`; never a path with a `src/test` segment pair). Java sources are read once per pass and not cached.
+- **Test sources** (`src/test/**`): never read.
 - **Secret values:** a config value under a secret-looking key (`password|passwd|secret|token|api[-_]?key|private[-_]?key|credential`, case-insensitive) is dropped inside the reader. It is never stored, hashed, logged or put in an exception; only the key name, path and line are reported (`LITERAL_SECRET`).
 - **Python entry files** (`main.py`, `manage.py`, …): checked by name only, never read. `setup.py` is read as text and never executed.
 - **Output:** no file contents, no git output, and no absolute paths appear in facts.json or in the logs.
@@ -52,7 +55,8 @@ Without `--out`, the JSON goes to stdout. A one-line summary and warning codes g
 |---|---|---|---|
 | directory depth below root | 12 | `--max-depth` | `DEPTH_LIMIT_HIT` |
 | files | 20000 (first N by path) | `--max-files` | `FILE_LIMIT_HIT` |
-| marker file size | 2 MB | `--max-marker-bytes` | `FILE_TOO_LARGE` |
+| marker file size (also each Java source) | 2 MB | `--max-marker-bytes` | `FILE_TOO_LARGE` |
+| Java sources parsed (both passes together) | 2000 | — | `SOURCE_LIMIT_HIT` |
 
 When a limit is hit, the scan continues with what it has. Hit limits are listed in `scan.limitsHit`.
 
@@ -125,7 +129,48 @@ Plain Java, no Spring, and nothing is executed: no `mvn`, no `java`, no network.
 
 **Runtime JDK** (app modules): the final stage `FROM eclipse-temurin|openjdk|amazoncorretto:NN` of the nearest `Dockerfile`, and the nearest `.java-version` (module dir, stack root, repo root). A runtime older than the compile level gives CONFLICT ("runtime older than compile level"). An equal or newer runtime is cited as `jdk-runtime-compatible`. A runtime never fills an UNRESOLVED java.version; it is only cited (`jdk-runtime-unverified`).
 
-## facts.json (schemaVersion 2)
+## Source facts (2B-0b-2)
+
+JavaParser (`javaparser-core`, language level JAVA_21) parses source text only; nothing is compiled, resolved or run. Every parser problem or exception becomes `SOURCE_UNPARSEABLE` with fixed text plus path and line; parser messages, which can quote source, are never kept. One file is parsed at a time and only small summaries (names, lines, literal paths) are kept, never syntax trees or file bytes.
+
+**Which files.** `*.java` under `src/main/java/` of every backend `java-maven` module (not `pom` packaging).
+- **Pass 1** parses files whose text contains `@RestController`, `@Controller`, `Mapping`, `SpringBootApplication`, `@Value` or `getenv` (or the fully qualified annotation names). Files are never chosen by name.
+- **Pass 2** parses only files that mention, as a whole word, a constant name a mapping path references, and that may declare a String constant (`String` with `static` and `final`, or `interface`).
+- Both passes share the 2,000-parse limit (pass 1 first, in path order). A constant that depends on a constant in a third file not parsed by either pass does not resolve.
+
+**Endpoints.**
+- A controller is a class annotated `@RestController` or `@Controller` (simple or fully qualified name), nested classes included. The handler is `package.Outer.Inner.method`.
+- `@GetMapping`/`@PostMapping`/`@PutMapping`/`@DeleteMapping`/`@PatchMapping` and `@RequestMapping(method = ...)`. Class-level and method-level methods are united (as Spring combines them); none at all gives `ANY`. HEAD, OPTIONS and TRACE keep their names. A method expression that is not a `RequestMethod` constant gives `ANY`, UNRESOLVED, "request method not resolvable".
+- `value`/`path` arrays: N paths x M methods. A missing or empty path means the class path. `value` and `path` both set and different: UNRESOLVED.
+- A path is a literal, or a constant (`BAR`, `Foo.BAR`, `com.x.Foo.BAR`) that resolves to exactly one `static final String` (or interface String field) in the parsed sources, initialised with literals and such constants joined by `+` (at most 10 levels, no cycles). Names are looked up in Java's order: member types in scope, single-type imports, same package, on-demand imports, fully qualified; static imports for bare names. Each constant line used is cited (`path-constant`). Anything else gives `path: null`, UNRESOLVED, `rawPath` = expression text (control characters removed, at most 200 chars), reason "path is not a literal or resolvable constant".
+- Joining: `server.servlet.context-path` of the default profile (only when KNOWN), then the class path, then the method path. Split on `/` outside `{...}`, empty segments dropped, one leading `/`, no trailing `/`; `/` alone stays `/`. A library module uses the context path of its stack's only app module. A context path that is set but not KNOWN, or that cannot be attributed to one app, gives no prefix and the reason "context path unknown" (status stays KNOWN).
+- `pathVariables`: `{id}`, `{id:regex}` and `{*id}` give `id`, in order, without repeats; the path keeps the text as written.
+- Evidence: the class line (`controller-class`: the class `@RequestMapping`, else the controller annotation), the method line (`handler-mapping`), constant lines (`path-constant`) and the context-path line (`context-path`).
+- Exact duplicates (same method, path, handler) are merged. Same method and path with different handlers: both kept, and `DUPLICATE_ENDPOINT` (key `"GET /path"`) on every handler after the first.
+
+**Not covered** (`ENDPOINTS_NOT_COVERED`, and `endpointsComplete: false`): text `RouterFunction` or `@Path(`; mapping annotations on an interface; a controller that extends or implements a type and declares no mappings; Kotlin sources (`.kt` below `src/main/`, one warning per module, never read); any other backend stack (Node, Python, Gradle, ...).
+
+**`endpointsComplete`** is true only when at least one backend Maven module was analysed and none of these happened: a not-covered case, an endpoint candidate that failed to parse, a too-large or unreadable source, or `SOURCE_LIMIT_HIT`.
+
+**Entry point** (`entry.mainClass`, app modules): classes annotated `@SpringBootApplication` that declare `public static void main(String[])` (or `String...`), cited as `spring-boot-application-annotation`.
+
+| POM plugin `mainClass` | annotated classes | result |
+|---|---|---|
+| none | 0 | UNRESOLVED, "no @SpringBootApplication class with main() found" |
+| none | 1 | KNOWN |
+| none | 2+ | CONFLICT, "multiple @SpringBootApplication classes" |
+| KNOWN | 0 | unchanged (the plugin decides) |
+| KNOWN | 1, same class | KNOWN, evidence merged |
+| KNOWN | 1, different | CONFLICT, "plugin mainClass and @SpringBootApplication class differ" |
+| KNOWN | 2+ | CONFLICT (the POM class is added as a candidate if it differs) |
+| UNRESOLVED | 1+ | stays UNRESOLVED, annotated classes cited |
+
+**Env var names in code** (all backend Maven modules):
+- `@Value("${NAME}")` / `@Value("${NAME:default}")` (rule `value-annotation`; SpEL `#{...}` skipped) works like a config placeholder: no default makes the variable required; a default on a secret-looking name is withheld.
+- `System.getenv("NAME")` (also via a static import of `java.lang.System.getenv`; rule `system-getenv`) adds evidence and never changes `required`. A variable seen only through getenv gets `required: false` and `reason: "read via System.getenv; the code may handle absence"`.
+- Only `[A-Z][A-Z0-9_]*` names are env vars. `System.getenv(<not a literal>)` and `System.getenv()` give `ENV_NAME_COMPUTED` with path and line.
+
+## facts.json (schemaVersion 3)
 
 The file is deterministic: fixed key order, 2-space indent, LF line endings, UTF-8, no timestamps, no absolute paths. The same tree gives byte-identical output.
 
@@ -161,8 +206,22 @@ The file is deterministic: fixed key order, 2-space indent, LF line endings, UTF
       "candidates": [],
       "reason": "null | text"
     },
-    { "name": "env.DB_PASSWORD", "required": true, "default": null, "evidence": [] }
+    { "name": "env.DB_PASSWORD", "required": true, "default": null, "evidence": [], "reason": "null | text" }
   ],
+  "endpoints": [
+    {
+      "method": "GET | POST | PUT | DELETE | PATCH | HEAD | OPTIONS | TRACE | ANY",
+      "path": "/shop/api/orders/{id} | null",
+      "pathVariables": ["id"],
+      "handler": "com.quickcart.api.OrderController.getOrder",
+      "module": "api",
+      "status": "KNOWN | UNRESOLVED",
+      "reason": "null | text",
+      "rawPath": "null | expression text (only when path is null)",
+      "evidence": [ { "rule": "handler-mapping", "path": "api/src/main/java/com/quickcart/api/OrderController.java", "line": 13, "commitSha": "hex | null", "sha256": "hex" } ]
+    }
+  ],
+  "endpointsComplete": false,
   "warnings": [
     { "code": "SECRET_FILE_PRESENT", "path": ".env", "message": "..." },
     { "code": "LITERAL_SECRET", "key": "admin.password", "path": "api/src/main/resources/application.yml", "line": 11, "message": "..." }
@@ -176,6 +235,7 @@ The file is deterministic: fixed key order, 2-space indent, LF line endings, UTF
   - `matched` includes the marker files of all members and is sorted by path.
   - Warnings are sorted by code, then path, then line, then key.
   - Facts are sorted by module, name, profile, value; `env.*` facts (which have no module) come first.
+  - Endpoints are sorted by path (null last), method, handler.
   - Evidence is sorted by path, line, rule. `overridden` is in precedence order. `overridden` and `candidates` are always arrays.
 - **`sha256`** is computed over the working-tree bytes exactly as read from disk. Line-ending
   settings such as `core.autocrlf` change those bytes, so the same commit can give different
@@ -190,7 +250,8 @@ The file is deterministic: fixed key order, 2-space indent, LF line endings, UTF
 - limits: `DEPTH_LIMIT_HIT`, `FILE_LIMIT_HIT`, `FILE_TOO_LARGE`
 - detection and secrets: `MARKER_UNPARSEABLE`, `DOCKERFILE_ONLY`, `SECRET_FILE_PRESENT`
 - config facts: `PARENT_OUTSIDE_REPO`, `PARENT_NOT_FOUND`, `CONFIG_UNPARSEABLE`, `LITERAL_SECRET`
+- source facts: `SOURCE_UNPARSEABLE`, `SOURCE_LIMIT_HIT`, `ENDPOINTS_NOT_COVERED`, `DUPLICATE_ENDPOINT`, `ENV_NAME_COMPUTED`
 
 ## Tests
 
-`runner/mvnw test`. Fixtures live in `src/test/resources/fixtures/`. Names that the repository's `.gitignore` hides are stored as `__node_modules` and `__target` and renamed when a fixture is loaded. No `.env` is committed: tests write one containing a random canary and check that it never appears in output. Likewise `quickcart-config` commits only the placeholder `__CANARY__`, which the tests replace with a random value before scanning. The real-symlink tests are skipped (and reported as skipped) on Windows machines that can't create symlinks. Junction tests cover the same code paths there.
+`runner/mvnw test`. Fixtures live in `src/test/resources/fixtures/`. Names that the repository's `.gitignore` hides are stored as `__node_modules` and `__target` and renamed when a fixture is loaded. No `.env` is committed: tests write one containing a random canary and check that it never appears in output. Likewise `quickcart-config` (in `application.yml`) and `quickcart-endpoints` (in the deliberately broken `Broken.java`) commit only the placeholder `__CANARY__`, which the tests replace with a random value before scanning. The real-symlink tests are skipped (and reported as skipped) on Windows machines that can't create symlinks. Junction tests cover the same code paths there.
