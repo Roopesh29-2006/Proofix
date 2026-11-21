@@ -393,7 +393,10 @@ class MavenFactsTest {
         assertTrue(cites(app, "pom.xml", 5));
         assertTrue(r.all("agg", "app.module").isEmpty());
         assertTrue(r.all(".", "app.module").isEmpty(), "pom packaging never counts");
-        assertTrue(r.all("api", "entry.mainClass").isEmpty(), "no mainClass configured: not guessed");
+        // No mainClass configured and no @SpringBootApplication source (2B-0b-2): UNRESOLVED, not guessed.
+        Fact entry = r.one("api", "entry.mainClass");
+        assertEquals(FactStatus.UNRESOLVED, entry.status());
+        assertNull(entry.value());
     }
 
     @Test

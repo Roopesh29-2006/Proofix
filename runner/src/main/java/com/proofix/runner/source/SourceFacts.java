@@ -47,6 +47,7 @@ public final class SourceFacts {
 
         JavaSources.Result sources = JavaSources.read(ctx, modules, maxParsed);
         EndpointExtractor.Result endpoints = EndpointExtractor.extract(ctx, sources, contextPaths(modules, facts));
+        EntryPoints.apply(modules, sources, ctx.scan().git().commitSha(), facts);
         return new Result(endpoints.endpoints(), complete && endpoints.complete());
     }
 
