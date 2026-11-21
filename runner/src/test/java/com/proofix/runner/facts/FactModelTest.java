@@ -84,7 +84,8 @@ class FactModelTest {
     @Test
     void envVarFactShape() throws Exception {
         JsonNode e = json(new EnvVarFact("env.PORT", false, "8080", List.of(ev("a.yml", 2, "r"))));
-        assertEquals(List.of("name", "required", "default", "evidence"), fields(e));
+        assertEquals(List.of("name", "required", "default", "evidence", "reason"), fields(e));
+        assertTrue(e.get("reason").isNull());
         assertTrue(json(new EnvVarFact("env.DB_PASSWORD", true, null, List.of())).get("default").isNull());
         assertThrows(IllegalArgumentException.class, () -> new EnvVarFact("env.X", true, "1", List.of()));
         assertThrows(IllegalArgumentException.class, () -> new EnvVarFact("PORT", false, null, List.of()));

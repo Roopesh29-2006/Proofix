@@ -72,7 +72,7 @@ public final class ConfigFactsExtractor {
                 if (m.app()) SpringConfigFacts.extract(ctx, m, env, facts);
             }
         }
-        SourceFacts.Result source = SourceFacts.extract(ctx, detection, modules, facts, maxParsedSources);
+        SourceFacts.Result source = SourceFacts.extract(ctx, detection, modules, facts, env, maxParsedSources);
         facts.addAll(SpringConfigFacts.envFacts(env));
         return new Result(facts, ctx.warnings(), source.endpoints(), source.complete());
     }

@@ -10,13 +10,18 @@ import java.util.Objects;
  * An environment variable the app reads through an explicit ${NAME} placeholder. {@code required}
  * is true when at least one use has no default. {@code defaultValue} is null when there is no
  * default or when the key or the variable name looks secret (a secret default is never emitted).
+ * {@code reason} (schemaVersion 3) is set when the variable is only read through System.getenv.
  */
-@JsonPropertyOrder({"name", "required", "default", "evidence"})
+@JsonPropertyOrder({"name", "required", "default", "evidence", "reason"})
 public record EnvVarFact(String name, boolean required,
                          @JsonProperty("default") String defaultValue,
-                         List<FactEvidence> evidence) implements FactEntry {
+                         List<FactEvidence> evidence, String reason) implements FactEntry {
 
     public static final String PREFIX = "env.";
+
+    public EnvVarFact(String name, boolean required, String defaultValue, List<FactEvidence> evidence) {
+        this(name, required, defaultValue, evidence, null);
+    }
 
     public EnvVarFact {
         Objects.requireNonNull(name, "name");

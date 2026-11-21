@@ -10,6 +10,7 @@ import com.proofix.runner.detect.model.Stack;
 import com.proofix.runner.facts.model.Endpoint;
 import com.proofix.runner.facts.model.Fact;
 import com.proofix.runner.facts.model.FactEntry;
+import com.proofix.runner.facts.model.FactEvidence;
 import com.proofix.runner.facts.model.FactStatus;
 import com.proofix.runner.scan.WarningCodes;
 import com.proofix.runner.scan.model.Warning;
@@ -29,13 +30,12 @@ public final class SourceFacts {
 
     public record Result(List<Endpoint> endpoints, boolean complete) {}
 
+    /**
+     * Adds endpoint results, replaces or adds entry.mainClass facts in {@code facts} and records
+     * env var uses from code in {@code env}.
+     */
     public static Result extract(ConfigContext ctx, Detection detection, List<JavaSources.Module> modules,
-                                 List<FactEntry> facts) {
-        return extract(ctx, detection, modules, facts, JavaSources.MAX_PARSED);
-    }
-
-    public static Result extract(ConfigContext ctx, Detection detection, List<JavaSources.Module> modules,
-                                 List<FactEntry> facts, int maxParsed) {
+                                 List<FactEntry> facts, Map<String, SpringConfigFacts.EnvAcc> env, int maxParsed) {
         boolean complete = !modules.isEmpty();
         for (Stack s : detection.stacks()) {
             if (Role.BACKEND.equals(s.role()) && !ConfigFactsExtractor.MAVEN_KIND.equals(s.kind())) {
@@ -48,7 +48,27 @@ public final class SourceFacts {
         JavaSources.Result sources = JavaSources.read(ctx, modules, maxParsed);
         EndpointExtractor.Result endpoints = EndpointExtractor.extract(ctx, sources, contextPaths(modules, facts));
         EntryPoints.apply(modules, sources, ctx.scan().git().commitSha(), facts);
+        codeEnv(ctx, sources, env);
         return new Result(endpoints.endpoints(), complete && endpoints.complete());
+    }
+
+    static final String COMPUTED_MESSAGE = "System.getenv name is not a string literal; the variable is not listed";
+
+    private static void codeEnv(ConfigContext ctx, JavaSources.Result sources, Map<String, SpringConfigFacts.EnvAcc> env) {
+        String commit = ctx.scan().git().commitSha();
+        for (JavaSources.ParsedFile f : sources.files()) {
+            for (SourceSummary.EnvUse u : f.summary().envUses()) {
+                if (u.kind() == SourceSummary.EnvUse.Kind.GETENV && u.text() == null) {
+                    ctx.warn(new Warning(WarningCodes.ENV_NAME_COMPUTED, null, f.path(), u.line(), COMPUTED_MESSAGE));
+                    continue;
+                }
+                boolean value = u.kind() == SourceSummary.EnvUse.Kind.VALUE;
+                FactEvidence ev = new FactEvidence(value ? SpringConfigFacts.RULE_VALUE : SpringConfigFacts.RULE_GETENV,
+                        f.path(), u.line(), commit, f.sha256());
+                if (value) SpringConfigFacts.recordValueAnnotation(env, u.text(), ev);
+                else SpringConfigFacts.recordGetenv(env, u.text(), ev);
+            }
+        }
     }
 
     /** Module dir -> the context path of its app (its own, or the stack's only app module). */
